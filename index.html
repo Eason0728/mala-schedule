@@ -6,38 +6,6 @@
 <title>麻的🔥小辛辣 排班系統</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script type="module">
-// Firebase 動態載入（只有設定後才啟用）
-window._fbReady = false;
-window._fbDB = null;
-window._fbRef = null;
-window._fbSet = null;
-window._fbGet = null;
-window._fbOnValue = null;
-window._fbListeners = {};
-
-async function initFirebase(cfg){
-  try {
-    const {initializeApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const {getDatabase,ref,set,get,onValue,child} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-    const app = initializeApp(cfg);
-    const db = getDatabase(app);
-    window._fbDB = db;
-    window._fbRef = (path)=>ref(db,path);
-    window._fbSet = set;
-    window._fbGet = get;
-    window._fbOnValue = onValue;
-    window._fbChild = child;
-    window._fbReady = true;
-    console.log('Firebase connected');
-    window.dispatchEvent(new Event('firebase-ready'));
-  } catch(e){
-    console.error('Firebase init failed', e);
-  }
-}
-
-window._initFirebase = initFirebase;
-</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -204,21 +172,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="section-title">國定假日設定（本月）</div>
   <div class="card" id="holiday-setting"></div>
-  <div class="section-title">☁️ 雲端同步（Firebase）</div>
-  <div class="card" id="fb-setting-card">
-    <div id="fb-status" style="font-size:13px;color:var(--gray);margin-bottom:12px">⚫ 未連線</div>
-    <div class="form-group"><label>API Key</label><input type="text" id="fb-apiKey" placeholder="AIza..."></div>
-    <div class="form-group"><label>Auth Domain</label><input type="text" id="fb-authDomain" placeholder="xxx.firebaseapp.com"></div>
-    <div class="form-group"><label>Database URL</label><input type="text" id="fb-dbUrl" placeholder="https://xxx-default-rtdb.firebaseio.com"></div>
-    <div class="form-group"><label>Project ID</label><input type="text" id="fb-projectId" placeholder="xxx"></div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-primary" style="flex:1" onclick="connectFirebase()">連線</button>
-      <button class="btn btn-ghost" onclick="pullFromFirebase()">⬇ 立即同步</button>
-      <button class="btn btn-danger btn-sm" onclick="disconnectFirebase()">斷線</button>
+  <div class="section-title">☁️ 雲端同步</div>
+  <div class="card" id="gist-setting-card">
+    <div id="gist-status" style="font-size:13px;margin-bottom:12px;color:var(--gray)">⚫ 未連線</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步</button>
+      <button class="btn btn-ghost" onclick="pushToGist(true)">⬆ 上傳</button>
+      <button class="btn btn-danger btn-sm" onclick="disconnectGist()">斷線</button>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--gray);line-height:1.7">
-      <a href="https://console.firebase.google.com/" target="_blank" style="color:var(--red)">前往 Firebase Console</a> → 建立專案 → Realtime Database → 建立資料庫（測試模式）→ 複製設定
+    <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);line-height:1.8" id="gist-setup-hint">
+      掃描下方 QR code 在手機上設定同步
     </div>
+    <div id="gist-qr" style="text-align:center;margin-top:10px"></div>
   </div>
 
   <div class="section-title">關於</div>
@@ -336,14 +301,9 @@ let state = {
   pendingShift: null,
 };
 
-// ===== STORAGE (localStorage + Firebase sync) =====
+// ===== STORAGE (localStorage + GitHub Gist sync) =====
 function load(key, def){ try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;} }
-function save(key,val){
-  localStorage.setItem(key,JSON.stringify(val));
-  if(window._fbReady && window._fbSet && window._fbRef){
-    window._fbSet(window._fbRef('mala/'+key), val).catch(e=>console.warn('FB write',e));
-  }
-}
+function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); scheduleGistPush(); }
 
 function getEmployees(){ return load('mala_employees',[]); }
 function saveEmployees(d){ save('mala_employees',d); }
@@ -356,46 +316,79 @@ function saveSetting(k,v){ const s=getSettings();s[k]=parseFloat(v)||v;save('mal
 function getHolidays(y,m){ return load(`mala_hol_${y}_${m}`,[]); }
 function saveHolidays(y,m,d){ save(`mala_hol_${y}_${m}`,d); }
 
-// Pull ALL data from Firebase into localStorage then re-render
-async function pullFromFirebase(){
-  if(!window._fbReady) return;
-  try {
-    const snap = await window._fbGet(window._fbRef('mala'));
-    if(!snap.exists()) return;
-    const data = snap.val();
-    Object.entries(data).forEach(([k,v])=>{
-      localStorage.setItem(k, JSON.stringify(v));
-    });
-    renderSchedule();
-    renderEmployees();
-    renderSalary();
-    renderSettings();
-    showToast('✅ 已從雲端同步資料');
-  } catch(e){ showToast('⚠️ 同步失敗：'+e.message); }
+// ===== GITHUB GIST SYNC =====
+function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
+function saveGistCfg(cfg){ localStorage.setItem('mala_gist_cfg', JSON.stringify(cfg)); }
+
+// Collect all mala_ keys into one JSON snapshot
+function buildSnapshot(){
+  const snap={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.startsWith('mala_')&&k!=='mala_gist_cfg'){
+      try{snap[k]=JSON.parse(localStorage.getItem(k));}catch{}
+    }
+  }
+  return snap;
 }
 
-// Subscribe to real-time updates
-function subscribeFirebase(){
-  if(!window._fbReady||!window._fbOnValue) return;
-  window._fbOnValue(window._fbRef('mala'), snap=>{
-    if(!snap.exists()) return;
-    const data = snap.val();
-    Object.entries(data).forEach(([k,v])=>{
-      localStorage.setItem(k, JSON.stringify(v));
-    });
-    renderSchedule();
-    renderEmployees();
-    renderSalary();
-  });
+// Debounced push (wait 2s after last change)
+let _pushTimer=null;
+function scheduleGistPush(){
+  const cfg=getGistCfg();
+  if(!cfg) return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(()=>pushToGist(false), 2000);
 }
 
-function getFBConfig(){ try{return JSON.parse(localStorage.getItem('mala_fb_cfg')||'null');}catch{return null;} }
-function saveFBConfig(cfg){ localStorage.setItem('mala_fb_cfg', JSON.stringify(cfg)); }
+async function pushToGist(showMsg=true){
+  const cfg=getGistCfg();
+  if(!cfg) return;
+  try{
+    const body=JSON.stringify({"mala-schedule.json":{content:JSON.stringify(buildSnapshot(),null,2)}});
+    const r=await fetch(`https://api.github.com/gists/${cfg.gistId}`,{
+      method:'PATCH',
+      headers:{'Authorization':'Bearer '+cfg.token,'Content-Type':'application/json'},
+      body:JSON.stringify({files:{"mala-schedule.json":{content:JSON.stringify(buildSnapshot(),null,2)}}})
+    });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    if(showMsg) showToast('✅ 已同步到雲端');
+  }catch(e){ if(showMsg) showToast('⚠️ 同步失敗：'+e.message); }
+}
 
-// Auto-connect if config saved
+async function pullFromGist(){
+  const cfg=getGistCfg();
+  if(!cfg){ showToast('請先設定 Gist 同步'); return; }
+  showToast('同步中...', 2000);
+  try{
+    const r=await fetch(`https://api.github.com/gists/${cfg.gistId}`,{
+      headers:{'Authorization':'Bearer '+cfg.token}
+    });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data=await r.json();
+    const content=data.files?.['mala-schedule.json']?.content;
+    if(!content) return;
+    const snap=JSON.parse(content);
+    if(snap._init) return;
+    Object.entries(snap).forEach(([k,v])=>{
+      localStorage.setItem(k, JSON.stringify(v));
+    });
+    renderSchedule(); renderEmployees(); renderSalary();
+    showToast('✅ 已從雲端同步');
+  }catch(e){ showToast('⚠️ 同步失敗：'+e.message); }
+}
+
+// Auto-pull on load, then poll every 30s
 (async()=>{
-  const cfg = getFBConfig();
-  if(cfg && cfg.apiKey){ await window._initFirebase(cfg); subscribeFirebase(); }
+  // Check for setup token in URL hash: #gist=ID&token=TOKEN
+  const hash=location.hash.slice(1);
+  if(hash.includes('gist=')){
+    const p=new URLSearchParams(hash);
+    const gistId=p.get('gist'), token=p.get('token');
+    if(gistId&&token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
+  }
+  const cfg=getGistCfg();
+  if(cfg){ await pullFromGist(); setInterval(()=>pullFromGist(), 30000); }
 })();
 
 // ===== HELPERS =====
@@ -771,7 +764,7 @@ function renderSettings(){
 
   // Holiday setting
   renderHolidaySetting();
-  updateFBStatus();
+  updateGistStatus();
 }
 
 function renderHolidaySetting(){
@@ -929,50 +922,34 @@ async function exportSalaryPDF(){
   showToast('✅ 薪資PDF已下載');
 }
 
-async function connectFirebase(){
-  const cfg = {
-    apiKey: document.getElementById('fb-apiKey').value.trim(),
-    authDomain: document.getElementById('fb-authDomain').value.trim(),
-    databaseURL: document.getElementById('fb-dbUrl').value.trim(),
-    projectId: document.getElementById('fb-projectId').value.trim(),
-  };
-  if(!cfg.apiKey||!cfg.databaseURL){showToast('請填入 API Key 和 Database URL');return;}
-  showToast('連線中...', 3000);
-  saveFBConfig(cfg);
-  await window._initFirebase(cfg);
-  subscribeFirebase();
-  await pullFromFirebase();
-  updateFBStatus();
-}
-
-function disconnectFirebase(){
-  localStorage.removeItem('mala_fb_cfg');
-  window._fbReady=false;
-  updateFBStatus();
+function disconnectGist(){
+  localStorage.removeItem('mala_gist_cfg');
+  updateGistStatus();
   showToast('已斷線，改用本機儲存');
 }
 
-function updateFBStatus(){
-  const el=document.getElementById('fb-status');
+function updateGistStatus(){
+  const el=document.getElementById('gist-status');
   if(!el) return;
-  const cfg=getFBConfig();
-  if(window._fbReady){
-    el.innerHTML='🟢 已連線：'+cfg?.projectId;
+  const cfg=getGistCfg();
+  if(cfg){
+    el.innerHTML='🟢 已連線（每 30 秒自動同步）';
     el.style.color='var(--green)';
-  } else if(cfg){
-    el.innerHTML='🟡 設定已儲存，重新整理後自動連線';
-    el.style.color='#e67e22';
   } else {
     el.innerHTML='⚫ 未連線';
     el.style.color='var(--gray)';
   }
-  // fill fields
+  // Show QR code for phone setup
+  const qrDiv=document.getElementById('gist-qr');
+  if(!qrDiv) return;
   if(cfg){
-    const f=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v||''};
-    f('fb-apiKey',cfg.apiKey);
-    f('fb-authDomain',cfg.authDomain);
-    f('fb-dbUrl',cfg.databaseURL);
-    f('fb-projectId',cfg.projectId);
+    const setupUrl=`https://eason0728.github.io/mala-schedule/#gist=${cfg.gistId}&token=${cfg.token}`;
+    qrDiv.innerHTML=`
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setupUrl)}"
+           style="border-radius:8px;border:1px solid var(--border)" alt="QR">
+      <div style="font-size:11px;color:var(--gray);margin-top:6px">用手機掃描，自動設定雲端同步</div>`;
+  } else {
+    qrDiv.innerHTML='';
   }
 }
 
