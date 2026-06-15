@@ -40,8 +40,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .emp-cell-req{font-size:9px;color:#e67e22;font-weight:600}
 .sch-tbl .hdr-row th{background:#f0f0f0;font-weight:600;font-size:10px;position:sticky;top:0;z-index:10}
 .sch-tbl .hdr-row .sticky-col{z-index:15;background:#f0f0f0}
-.day-sat{color:#3498db}
-.day-sun,.day-hol{color:#e74c3c}
+.day-sat,.day-sun,.day-hol{color:#e74c3c}
 .shift-cell{cursor:pointer;border-radius:2px;font-weight:600;min-width:26px;height:28px;line-height:28px;font-size:11px}
 .shift-cell:active{opacity:0.7}
 /* SHIFT COLORS */
@@ -116,6 +115,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .section-title{padding:12px 16px 4px;font-size:12px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
 /* SUMMARY ROW */
 .count-row td{background:#fff9e6;font-weight:600}
+/* ANNOTATION ROW */
+.note-row td{background:#fffbe6;font-size:9px;color:#b8860b;font-weight:600;cursor:pointer;line-height:1.2;padding:2px 1px}
+.note-row .sticky-col{background:#fffbe6}
+.note-hol{color:#e74c3c}
+/* DELIVERY ROWS */
+.deliv-lunch td{background:#eaf7ee;font-size:10px;font-weight:600;cursor:pointer}
+.deliv-lunch .sticky-col{background:#eaf7ee;color:#1d9e75}
+.deliv-dinner td{background:#e8eefc;font-size:10px;font-weight:600;cursor:pointer}
+.deliv-dinner .sticky-col{background:#e8eefc;color:#3a5fcd}
+.deliv-cell:active{opacity:.6}
 </style>
 </head>
 <body>
@@ -296,7 +305,7 @@ const DEFAULT_SHIFTS = {
   F:  {name:'F班', time:'11:00～14:00\n17:30～22:30', hours:8.0, breakH:0, color:'#FFA07A', textColor:'#c0392b', isOff:false},
   H:  {name:'H班', time:'11:00～14:00\n17:00～22:00', hours:8.0, breakH:0, color:'#FFB6C1', textColor:'#333', isOff:false},
   '休': {name:'休假', time:'－', hours:0, breakH:0, color:'#f5f5f5', textColor:'#aaa', isOff:true},
-  '國': {name:'國定假日', time:'國定假日', hours:0, breakH:0, color:'#ff7675', textColor:'#fff', isOff:false},
+  '國': {name:'國定假日', time:'國定假日', hours:0, breakH:0, color:'#ffe0e0', textColor:'#e74c3c', isOff:false},
 };
 
 // ===== STATE =====
@@ -323,6 +332,10 @@ function getSettings(){ return {...{regularHours:8,ot1:1.33,ot2:1.67,holRate:2.0
 function saveSetting(k,v){ const s=getSettings();s[k]=parseFloat(v)||v;save('mala_settings',s); }
 function getHolidays(y,m){ return load(`mala_hol_${y}_${m}`,[]); }
 function saveHolidays(y,m,d){ save(`mala_hol_${y}_${m}`,d); }
+function getNotes(y,m){ return load(`mala_notes_${y}_${m}`,{}); }
+function saveNotes(y,m,d){ save(`mala_notes_${y}_${m}`,d); }
+function getDelivery(y,m){ return load(`mala_deliv_${y}_${m}`,{lunch:{},dinner:{}}); }
+function saveDelivery(y,m,d){ save(`mala_deliv_${y}_${m}`,d); }
 
 // ===== GITHUB GIST SYNC =====
 function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
@@ -453,14 +466,24 @@ function renderSchedule(){
   for(let d=1;d<=days;d++){
     const wk=weekday(y,m,d);
     const isHol=holidays.includes(d);
-    const cls=isHol||wk===0?'day-sun':(wk===6?'day-sat':'');
+    const cls=isHol||wk===0||wk===6?'day-sun':'';
     html+=`<th class="${cls}">${d}<br><span>${wd(wk)}</span></th>`;
   }
-  html+='<th>出勤</th><th>時數</th></tr></thead><tbody>';
+  html+='<th>休假</th><th>時數</th></tr></thead><tbody>';
+
+  // 提醒/節日 annotation row
+  const notes=getNotes(y,m);
+  html+='<tr class="note-row"><td class="sticky-col">提醒</td>';
+  for(let d=1;d<=days;d++){
+    const lbl=dayAnnotation(y,m,d,holidays,notes);
+    const isHol=holidays.includes(d);
+    html+=`<td class="${isHol?'note-hol':''}" onclick="editNote(${d})">${lbl||'　'}</td>`;
+  }
+  html+='<td></td><td></td></tr>';
 
   emps.forEach(emp=>{
     const empSch=sch[emp.id]||{};
-    let workDays=0, totalH=0;
+    let restDays=0, totalH=0;
     const hireStr=emp.hireDate?emp.hireDate.slice(0,7).replace('-','/'):'';
     const entitle=emp.isFullTime?calcLeaveEntitlement(emp.hireDate):0;
     const used=calcLeaveUsed(emp.id, y);
@@ -474,14 +497,19 @@ function renderSchedule(){
         : `<div class="emp-cell-sub" style="color:#3498db">計時</div>`}
     </td>`;
     for(let d=1;d<=days;d++){
-      const code=empSch[d]||'';
+      let code=empSch[d]||'';
+      // 計時人員空白班別顯示休
+      if(!code && !emp.isFullTime) code='休';
       const sh=shifts[code];
-      const bg=sh?sh.color:'#fff';
-      const tc=sh?sh.textColor:'#ccc';
-      if(sh&&!sh.isOff){ workDays++; totalH+=calcWorkHours(sh); }
+      const isWorking = sh && !sh.isOff && code!=='國';
+      const isRest = (sh && sh.isOff) || code==='國';
+      let bg='#fff', tc='#ccc';
+      if(sh){ bg=sh.color; tc=isWorking?'#000':'#e74c3c'; }
+      if(isWorking){ totalH+=calcWorkHours(sh); }
+      if(isRest){ restDays++; }
       html+=`<td class="shift-cell" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${code||'　'}</td>`;
     }
-    html+=`<td style="background:#f9f9f9;font-weight:600">${workDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
+    html+=`<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
   });
 
   // 每日人數
@@ -492,12 +520,31 @@ function renderSchedule(){
     emps.forEach(emp=>{
       const code=(sch[emp.id]||{})[d]||'';
       const sh=shifts[code];
-      if(sh&&!sh.isOff&&code) cnt++;
+      if(sh&&!sh.isOff&&code&&code!=='國') cnt++;
     });
     totalCount+=cnt;
     html+=`<td style="background:#fff9e6;font-weight:600">${cnt||''}</td>`;
   }
   html+=`<td style="background:#fff9e6;font-weight:600">${(totalCount/days).toFixed(1)}</td><td></td></tr>`;
+
+  // 外送 rows
+  const deliv=getDelivery(y,m);
+  let lunchCnt=0, dinnerCnt=0;
+  html+='<tr class="deliv-lunch"><td class="sticky-col">午餐外送</td>';
+  for(let d=1;d<=days;d++){
+    const v=deliv.lunch?.[d]||'';
+    if(v) lunchCnt++;
+    html+=`<td class="deliv-cell" onclick="editDelivery('lunch',${d})">${v||'　'}</td>`;
+  }
+  html+=`<td style="font-weight:700;color:#1d9e75">${lunchCnt}</td><td></td></tr>`;
+  html+='<tr class="deliv-dinner"><td class="sticky-col">晚餐外送</td>';
+  for(let d=1;d<=days;d++){
+    const v=deliv.dinner?.[d]||'';
+    if(v) dinnerCnt++;
+    html+=`<td class="deliv-cell" onclick="editDelivery('dinner',${d})">${v||'　'}</td>`;
+  }
+  html+=`<td style="font-weight:700;color:#3a5fcd">${dinnerCnt}</td><td></td></tr>`;
+
   html+='</tbody>';
   tbl.innerHTML=html;
 }
@@ -509,15 +556,14 @@ function calcWorkHours(sh){
 
 function renderStatBar(y,m,emps,sch,shifts,holidays){
   const days=daysInMonth(y,m);
-  let totalWork=0,totalH=0,totalOT=0;
+  let totalH=0,totalOT=0;
   const settings=getSettings();
   emps.forEach(emp=>{
     const empSch=sch[emp.id]||{};
     for(let d=1;d<=days;d++){
       const code=empSch[d]||'';
       const sh=shifts[code];
-      if(sh&&!sh.isOff){
-        totalWork++;
+      if(sh&&!sh.isOff&&code!=='國'){
         const h=calcWorkHours(sh);
         totalH+=h;
         totalOT+=Math.max(h-settings.regularHours,0);
@@ -525,12 +571,14 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
     }
   });
   const reqH=calcRequiredHours(y,m);
+  const deliv=getDelivery(y,m);
+  const delivCnt=Object.keys(deliv.lunch||{}).length+Object.keys(deliv.dinner||{}).length;
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
-    <div class="stat-chip"><div class="sv">${totalWork}</div><div class="sl">總出勤</div></div>
     <div class="stat-chip"><div class="sv">${totalH.toFixed(0)}</div><div class="sl">總時數</div></div>
     <div class="stat-chip"><div class="sv">${totalOT.toFixed(0)}</div><div class="sl">加班時數</div></div>
     <div class="stat-chip"><div class="sv" style="color:#e67e22">${reqH}</div><div class="sl">正職應出勤</div></div>
+    <div class="stat-chip"><div class="sv" style="color:#1d9e75">${delivCnt}</div><div class="sl">外送次數</div></div>
     <div class="stat-chip"><div class="sv">${days}</div><div class="sl">天數</div></div>
   `;
 }
@@ -543,6 +591,70 @@ function renderShiftLegend(shifts){
       ${code} <span style="font-weight:400;font-size:9px">${sh.time.replace('\n',' ')}</span>
     </div>`
   ).join('');
+}
+
+// ===== LUNAR CALENDAR (農曆) =====
+const LUNAR_INFO=[0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,0x06ca0,0x0b550,0x15355,0x04da0,0x0a5d0,0x14573,0x052d0,0x0a9a8,0x0e950,0x06aa0,0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,0x0d520];
+function lLeapMonth(y){ return LUNAR_INFO[y-1900]&0xf; }
+function lLeapDays(y){ return lLeapMonth(y)?((LUNAR_INFO[y-1900]&0x10000)?30:29):0; }
+function lMonthDays(y,m){ return (LUNAR_INFO[y-1900]&(0x10000>>m))?30:29; }
+function lYearDays(y){ let s=348; for(let i=0x8000;i>0x8;i>>=1){s+=(LUNAR_INFO[y-1900]&i)?1:0;} return s+lLeapDays(y); }
+function solarToLunar(y,m,d){
+  let offset=Math.round((Date.UTC(y,m-1,d)-Date.UTC(1900,0,31))/86400000);
+  let temp=0, ly;
+  for(ly=1900; ly<2100&&offset>0; ly++){ temp=lYearDays(ly); offset-=temp; }
+  if(offset<0){ offset+=temp; ly--; }
+  const leap=lLeapMonth(ly); let isLeap=false, lm;
+  for(lm=1; lm<13&&offset>0; lm++){
+    if(leap>0&&lm===leap+1&&!isLeap){ lm--; isLeap=true; temp=lLeapDays(ly); }
+    else { temp=lMonthDays(ly,lm); }
+    if(isLeap&&lm===leap+1) isLeap=false;
+    offset-=temp;
+  }
+  if(offset===0&&leap>0&&lm===leap+1){ if(isLeap){isLeap=false;}else{isLeap=true;lm--;} }
+  if(offset<0){ offset+=temp; lm--; }
+  return {lm, ld: offset+1};
+}
+
+// ===== DAY ANNOTATIONS (節日/做牙/盤點) =====
+const TW_HOLIDAY_NAMES={
+  1:{1:'元旦'}, 2:{28:'和平紀念日'}, 4:{4:'兒童節',5:'清明節'},
+  5:{1:'勞動節'}, 10:{10:'國慶日'},
+};
+function dayAnnotation(y,m,d,holidays,notes){
+  if(notes[d]) return notes[d];                 // 自訂備註優先
+  if(d===daysInMonth(y,m)) return '月底盤點';     // 每月最後一天
+  const hn=(TW_HOLIDAY_NAMES[m]||{})[d];         // 國定假日名稱
+  if(hn) return hn;
+  if(holidays.includes(d)) return '休';
+  const L=solarToLunar(y,m,d);                   // 農曆做牙
+  if(L.ld===2) return '初二';
+  if(L.ld===16) return '十六';
+  return '';
+}
+function editNote(d){
+  const y=state.curYear,m=state.curMonth;
+  const notes=getNotes(y,m);
+  const auto=(d===daysInMonth(y,m))?'月底盤點':((TW_HOLIDAY_NAMES[m]||{})[d]||'');
+  const cur=notes[d]||'';
+  const v=prompt(`${m}/${d} 備註（如：換油、盤點。留空清除）`, cur||auto);
+  if(v===null) return;
+  if(v.trim()==='') delete notes[d]; else notes[d]=v.trim();
+  saveNotes(y,m,notes);
+  renderSchedule();
+}
+function editDelivery(meal,d){
+  const y=state.curYear,m=state.curMonth;
+  const deliv=getDelivery(y,m);
+  if(!deliv.lunch) deliv.lunch={};
+  if(!deliv.dinner) deliv.dinner={};
+  const label=meal==='lunch'?'午餐':'晚餐';
+  const cur=deliv[meal][d]||'';
+  const v=prompt(`${m}/${d} ${label}外送對象（如：台A、昌益。留空清除）`, cur);
+  if(v===null) return;
+  if(v.trim()==='') delete deliv[meal][d]; else deliv[meal][d]=v.trim();
+  saveDelivery(y,m,deliv);
+  renderSchedule();
 }
 
 // ===== LEAVE & HOURS CALCULATIONS =====
