@@ -33,7 +33,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .sch-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap}
 .sch-tbl th,.sch-tbl td{border:1px solid #ccc;padding:3px 2px;text-align:center;min-width:26px}
-.sch-tbl .sticky-col{position:sticky;left:0;z-index:5;background:#fff;min-width:65px;max-width:65px;text-align:left;padding:4px 6px;font-weight:600;font-size:12px}
+.sch-tbl .sticky-col{position:sticky;left:0;z-index:5;background:#fff;min-width:100px;max-width:100px;text-align:left;padding:4px 6px;font-weight:600;font-size:12px}
+.emp-cell-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emp-cell-sub{font-size:9px;color:var(--gray);line-height:1.5;font-weight:400}
+.emp-cell-leave{font-size:9px;color:#27ae60;font-weight:600}
+.emp-cell-req{font-size:9px;color:#e67e22;font-weight:600}
 .sch-tbl .hdr-row th{background:#f0f0f0;font-weight:600;font-size:10px;position:sticky;top:0;z-index:10}
 .sch-tbl .hdr-row .sticky-col{z-index:15;background:#f0f0f0}
 .day-sat{color:#3498db}
@@ -129,6 +133,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="mnav-btn" onclick="changeMonth(1)">›</button>
   </div>
   <div class="stat-bar" id="stat-bar"></div>
+  <div id="shift-legend" style="display:flex;overflow-x:auto;padding:6px 12px;gap:6px;background:#fafafa;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch"></div>
   <div class="tbl-wrap">
     <table class="sch-tbl" id="sch-table"></table>
   </div>
@@ -222,6 +227,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-row">
       <div class="form-group"><label>保險自負額</label><input type="number" id="emp-ins" placeholder="0" min="0"></div>
       <div class="form-group"><label>宿舍費</label><input type="number" id="emp-dorm" placeholder="0" min="0"></div>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="emp-fulltime" style="width:auto;margin-right:6px">正職員工（顯示當月應出勤時數）</label>
     </div>
     <div style="display:flex;gap:10px;margin-top:8px">
       <button class="btn btn-outline" style="flex:1" onclick="closeModal('emp-overlay')">取消</button>
@@ -435,12 +443,13 @@ function renderSchedule(){
   const shifts=getShifts();
   const holidays=getHolidays(y,m);
 
-  // Stat bar
+  // Stat bar + legend
   renderStatBar(y,m,emps,sch,shifts,holidays);
+  renderShiftLegend(shifts);
 
   // Table
   const tbl=document.getElementById('sch-table');
-  let html='<thead><tr class="hdr-row"><th class="sticky-col">員工</th>';
+  let html='<thead><tr class="hdr-row"><th class="sticky-col" style="font-size:10px">員工／到職</th>';
   for(let d=1;d<=days;d++){
     const wk=weekday(y,m,d);
     const isHol=holidays.includes(d);
@@ -452,14 +461,22 @@ function renderSchedule(){
   emps.forEach(emp=>{
     const empSch=sch[emp.id]||{};
     let workDays=0, totalH=0;
-    html+=`<tr><td class="sticky-col">${emp.name}</td>`;
+    const hireStr=emp.hireDate?emp.hireDate.slice(0,7).replace('-','/'):'';
+    const entitle=calcLeaveEntitlement(emp.hireDate);
+    const used=calcLeaveUsed(emp.id, y);
+    const remain=Math.max(entitle-used,0);
+    const reqH=emp.isFullTime?calcRequiredHours(y,m):null;
+    html+=`<tr><td class="sticky-col">
+      <div class="emp-cell-name">${emp.name}</div>
+      <div class="emp-cell-sub">到職 ${hireStr}</div>
+      <div class="emp-cell-leave">特休剩 ${remain}天</div>
+      ${reqH!==null?`<div class="emp-cell-req">應出 ${reqH}h</div>`:''}
+    </td>`;
     for(let d=1;d<=days;d++){
       const code=empSch[d]||'';
       const sh=shifts[code];
       const bg=sh?sh.color:'#fff';
       const tc=sh?sh.textColor:'#ccc';
-      const wk=weekday(y,m,d);
-      const isHol=holidays.includes(d);
       if(sh&&!sh.isOff){ workDays++; totalH+=calcWorkHours(sh); }
       html+=`<td class="shift-cell" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${code||'　'}</td>`;
     }
@@ -506,13 +523,61 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
       }
     }
   });
+  const reqH=calcRequiredHours(y,m);
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
     <div class="stat-chip"><div class="sv">${totalWork}</div><div class="sl">總出勤</div></div>
     <div class="stat-chip"><div class="sv">${totalH.toFixed(0)}</div><div class="sl">總時數</div></div>
     <div class="stat-chip"><div class="sv">${totalOT.toFixed(0)}</div><div class="sl">加班時數</div></div>
+    <div class="stat-chip"><div class="sv" style="color:#e67e22">${reqH}</div><div class="sl">正職應出勤</div></div>
     <div class="stat-chip"><div class="sv">${days}</div><div class="sl">天數</div></div>
   `;
+}
+
+function renderShiftLegend(shifts){
+  const el=document.getElementById('shift-legend');
+  if(!el) return;
+  el.innerHTML=Object.entries(shifts).filter(([,sh])=>!sh.isOff).map(([code,sh])=>
+    `<div style="flex:0 0 auto;background:${sh.color};color:${sh.textColor};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap">
+      ${code} <span style="font-weight:400;font-size:9px">${sh.time.replace('\n',' ')}</span>
+    </div>`
+  ).join('');
+}
+
+// ===== LEAVE & HOURS CALCULATIONS =====
+function calcLeaveEntitlement(hireDateStr){
+  if(!hireDateStr) return 0;
+  const hire=new Date(hireDateStr), now=new Date();
+  const days=(now-hire)/(24*60*60*1000);
+  const months=days/30.44, years=days/365.25;
+  if(months<6) return 0;
+  if(months<12) return 3;
+  if(years<2) return 7;
+  if(years<3) return 10;
+  if(years<5) return 14;
+  if(years<10) return 15;
+  return Math.min(15+Math.floor(years-10)+1, 30);
+}
+
+function calcLeaveUsed(empId, y){
+  let used=0;
+  for(let m=1;m<=12;m++){
+    const sch=getSchedule(y,m);
+    const empSch=sch[empId]||{};
+    used+=Object.values(empSch).filter(c=>c==='特').length;
+  }
+  return used;
+}
+
+function calcRequiredHours(y,m){
+  const days=daysInMonth(y,m);
+  const holidays=getHolidays(y,m);
+  let workDays=0;
+  for(let d=1;d<=days;d++){
+    const wk=weekday(y,m,d);
+    if(wk!==0&&wk!==6&&!holidays.includes(d)) workDays++;
+  }
+  return workDays*8;
 }
 
 // ===== SHIFT PICKER =====
@@ -607,6 +672,7 @@ function openEmpModal(id=''){
   document.getElementById('emp-base').value=e.base||'';
   document.getElementById('emp-ins').value=e.insurance||'';
   document.getElementById('emp-dorm').value=e.dormitory||'';
+  document.getElementById('emp-fulltime').checked=e.isFullTime||false;
   openModal('emp-overlay');
 }
 
@@ -625,6 +691,7 @@ function saveEmployee(){
     base:parseFloat(document.getElementById('emp-base').value)||0,
     insurance:parseFloat(document.getElementById('emp-ins').value)||0,
     dormitory:parseFloat(document.getElementById('emp-dorm').value)||0,
+    isFullTime:document.getElementById('emp-fulltime').checked,
   };
   if(idx>=0) emps[idx]=emp; else emps.push(emp);
   saveEmployees(emps);
