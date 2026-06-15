@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>麻的🔥小辛辣 排班系統</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --red:#e74c3c;--red-dark:#c0392b;--bg:#f5f5f5;--white:#fff;
+  --border:#ddd;--text:#333;--gray:#888;--green:#27ae60;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+/* NAV */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--white);border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.nav-btn{flex:1;padding:8px 0 6px;text-align:center;cursor:pointer;color:var(--gray);border:none;background:none;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.nav-btn .ico{font-size:22px}
+.nav-btn.active{color:var(--red)}
+/* PAGES */
+.page{display:none;padding-bottom:70px}
+.page.active{display:block}
+/* HEADER */
+.hdr{background:var(--red);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+.hdr h1{font-size:17px;font-weight:700}
+.hdr-btn{background:rgba(255,255,255,0.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;font-size:13px;cursor:pointer}
+/* MONTH NAV */
+.month-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:40}
+.month-nav .mnav-btn{background:none;border:1px solid var(--border);width:36px;height:36px;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.month-nav .month-label{font-size:18px;font-weight:700}
+/* SCHEDULE TABLE */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.sch-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap}
+.sch-tbl th,.sch-tbl td{border:1px solid #ccc;padding:3px 2px;text-align:center;min-width:26px}
+.sch-tbl .sticky-col{position:sticky;left:0;z-index:5;background:#fff;min-width:65px;max-width:65px;text-align:left;padding:4px 6px;font-weight:600;font-size:12px}
+.sch-tbl .hdr-row th{background:#f0f0f0;font-weight:600;font-size:10px;position:sticky;top:0;z-index:10}
+.sch-tbl .hdr-row .sticky-col{z-index:15;background:#f0f0f0}
+.day-sat{color:#3498db}
+.day-sun,.day-hol{color:#e74c3c}
+.shift-cell{cursor:pointer;border-radius:2px;font-weight:600;min-width:26px;height:28px;line-height:28px;font-size:11px}
+.shift-cell:active{opacity:0.7}
+/* SHIFT COLORS */
+.s-A{background:#FFE066}
+.s-B{background:#FFD700}
+.s-C{background:#90EE90}
+.s-C2{background:#7FD9A0}
+.s-D{background:#87CEEB}
+.s-D1{background:#ADD8E6}
+.s-E{background:#DDA0DD}
+.s-F{background:#FFA07A;color:#c0392b}
+.s-H{background:#FFB6C1}
+.s-休{background:#f5f5f5;color:#aaa}
+.s-國{background:#ff7675;color:#fff}
+.s-空{background:#fff;color:#ccc}
+/* STAT BAR */
+.stat-bar{display:flex;overflow-x:auto;padding:8px 12px;gap:8px;background:#fff;border-bottom:1px solid var(--border)}
+.stat-chip{flex:0 0 auto;background:#f9f9f9;border:1px solid var(--border);border-radius:8px;padding:6px 12px;text-align:center;min-width:70px}
+.stat-chip .sv{font-size:16px;font-weight:700;color:var(--red)}
+.stat-chip .sl{font-size:10px;color:var(--gray)}
+/* CARDS */
+.card{background:#fff;border-radius:10px;margin:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+/* EMP LIST */
+.emp-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.emp-item:last-child{border-bottom:none}
+.emp-avatar{width:40px;height:40px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0}
+.emp-info{flex:1;margin:0 12px}
+.emp-info .name{font-size:15px;font-weight:600}
+.emp-info .sub{font-size:12px;color:var(--gray);margin-top:2px}
+.emp-actions{display:flex;gap:8px}
+/* SALARY */
+.sal-item{padding:14px 0;border-bottom:1px solid var(--border)}
+.sal-item:last-child{border-bottom:none}
+.sal-name{font-size:15px;font-weight:600;margin-bottom:6px}
+.sal-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.sal-tag{font-size:11px;background:#f5f5f5;padding:3px 8px;border-radius:20px;color:var(--gray)}
+.sal-total{font-size:18px;font-weight:700;color:var(--green)}
+.sal-deduct{font-size:12px;color:#e74c3c;margin-top:2px}
+/* BUTTONS */
+.btn{padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:500}
+.btn-primary{background:var(--red);color:#fff}
+.btn-outline{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:6px}
+.btn-danger{background:#fff;color:#e74c3c;border:1px solid #e74c3c}
+.btn-ghost{background:#f5f5f5;color:var(--text);border:none}
+.fab{position:fixed;bottom:80px;right:16px;width:54px;height:54px;border-radius:50%;background:var(--red);color:#fff;font-size:28px;border:none;cursor:pointer;box-shadow:0 4px 14px rgba(231,76,60,.4);display:flex;align-items:center;justify-content:center;z-index:90}
+/* MODAL */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;overflow-y:auto;align-items:flex-end}
+.overlay.show{display:flex}
+.modal{background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-height:92vh;overflow-y:auto}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-hdr h2{font-size:18px;font-weight:700}
+.modal-close{font-size:24px;cursor:pointer;color:var(--gray);background:none;border:none;padding:0 4px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:var(--gray);margin-bottom:5px}
+.form-group input,.form-group select{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;outline:none}
+.form-group input:focus,.form-group select:focus{border-color:var(--red)}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
+/* SHIFT PICKER */
+.shift-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:8px 0}
+.sp-btn{padding:10px 4px;border-radius:8px;border:2px solid transparent;cursor:pointer;font-size:13px;font-weight:700;text-align:center;transition:.15s}
+.sp-btn.selected{border-color:var(--red);box-shadow:0 0 0 1px var(--red)}
+.sp-btn:active{transform:scale(.95)}
+/* SETTINGS */
+.shift-def-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px}
+.shift-badge{width:36px;height:28px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+/* TOAST */
+.toast{position:fixed;top:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+/* DIVIDER */
+.section-title{padding:12px 16px 4px;font-size:12px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+/* SUMMARY ROW */
+.count-row td{background:#fff9e6;font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- ===== PAGES ===== -->
+<!-- 班表 -->
+<div id="page-schedule" class="page active">
+  <div class="hdr">
+    <h1>🔥 麻的小辛辣 排班</h1>
+    <button class="hdr-btn" onclick="exportPDF()">📄 匯出</button>
+  </div>
+  <div class="month-nav">
+    <button class="mnav-btn" onclick="changeMonth(-1)">‹</button>
+    <span class="month-label" id="month-label"></span>
+    <button class="mnav-btn" onclick="changeMonth(1)">›</button>
+  </div>
+  <div class="stat-bar" id="stat-bar"></div>
+  <div class="tbl-wrap">
+    <table class="sch-tbl" id="sch-table"></table>
+  </div>
+</div>
+
+<!-- 員工 -->
+<div id="page-employees" class="page">
+  <div class="hdr"><h1>👥 員工管理</h1></div>
+  <div class="card" id="emp-list"></div>
+  <button class="fab" onclick="openEmpModal()">＋</button>
+</div>
+
+<!-- 薪資 -->
+<div id="page-salary" class="page">
+  <div class="hdr">
+    <h1>💰 薪資計算</h1>
+    <button class="hdr-btn" onclick="exportSalaryPDF()">📄 匯出</button>
+  </div>
+  <div class="month-nav">
+    <button class="mnav-btn" onclick="changeSalMonth(-1)">‹</button>
+    <span class="month-label" id="sal-month-label"></span>
+    <button class="mnav-btn" onclick="changeSalMonth(1)">›</button>
+  </div>
+  <div id="salary-content"></div>
+</div>
+
+<!-- 設定 -->
+<div id="page-settings" class="page">
+  <div class="hdr"><h1>⚙️ 設定</h1></div>
+  <div class="section-title">班別定義</div>
+  <div class="card" id="shift-defs"></div>
+  <div class="section-title">加班費規則（台灣勞基法）</div>
+  <div class="card">
+    <div class="form-group"><label>正常工時（小時/日）</label><input type="number" id="set-regular-hours" value="8" min="1" max="12" onchange="saveSetting('regularHours',this.value)"></div>
+    <div class="form-row">
+      <div class="form-group"><label>前2小時加班倍率</label><input type="number" id="set-ot1" step="0.01" value="1.33" onchange="saveSetting('ot1',this.value)"></div>
+      <div class="form-group"><label>超過2小時倍率</label><input type="number" id="set-ot2" step="0.01" value="1.67" onchange="saveSetting('ot2',this.value)"></div>
+    </div>
+    <div class="section-title" style="padding:8px 0 4px;font-size:11px">國定假日加班</div>
+    <div class="form-group"><label>國定假日倍率</label><input type="number" id="set-hol" step="0.01" value="2.00" onchange="saveSetting('holRate',this.value)"></div>
+  </div>
+  <div class="section-title">國定假日設定（本月）</div>
+  <div class="card" id="holiday-setting"></div>
+  <div class="section-title">關於</div>
+  <div class="card" style="color:var(--gray);font-size:13px;line-height:1.8">
+    <p>麻的🔥小辛辣 排班系統 v1.0</p>
+    <p>資料儲存於本機瀏覽器（LocalStorage）</p>
+    <button class="btn btn-danger btn-sm" style="margin-top:12px" onclick="clearAllData()">清除所有資料</button>
+  </div>
+</div>
+
+<!-- ===== BOTTOM NAV ===== -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" onclick="showPage('schedule',this)"><span class="ico">📅</span>班表</button>
+  <button class="nav-btn" onclick="showPage('employees',this)"><span class="ico">👥</span>員工</button>
+  <button class="nav-btn" onclick="showPage('salary',this)"><span class="ico">💰</span>薪資</button>
+  <button class="nav-btn" onclick="showPage('settings',this)"><span class="ico">⚙️</span>設定</button>
+</nav>
+
+<!-- ===== MODALS ===== -->
+<!-- 員工 Modal -->
+<div class="overlay" id="emp-overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 id="emp-modal-title">新增員工</h2>
+      <button class="modal-close" onclick="closeModal('emp-overlay')">✕</button>
+    </div>
+    <input type="hidden" id="emp-id">
+    <div class="form-row">
+      <div class="form-group"><label>姓名 *</label><input type="text" id="emp-name" placeholder="張小明"></div>
+      <div class="form-group"><label>到職日 *</label><input type="date" id="emp-hire"></div>
+    </div>
+    <div class="form-group"><label>聯絡電話</label><input type="tel" id="emp-phone" placeholder="0912345678"></div>
+    <div class="form-row">
+      <div class="form-group"><label>時薪（元）*</label><input type="number" id="emp-wage" placeholder="183" min="0"></div>
+      <div class="form-group"><label>底薪（元）</label><input type="number" id="emp-base" placeholder="0" min="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>保險自負額</label><input type="number" id="emp-ins" placeholder="0" min="0"></div>
+      <div class="form-group"><label>宿舍費</label><input type="number" id="emp-dorm" placeholder="0" min="0"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal('emp-overlay')">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveEmployee()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 班別 Picker -->
+<div class="overlay" id="shift-overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 id="shift-modal-title">選擇班別</h2>
+      <button class="modal-close" onclick="closeModal('shift-overlay')">✕</button>
+    </div>
+    <div class="shift-grid" id="shift-picker-grid"></div>
+    <div style="margin-top:8px;padding:8px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);text-align:center" id="shift-info-box"></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('shift-overlay')">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="applyShift()">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 班別設定 Modal -->
+<div class="overlay" id="shiftdef-overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 id="shiftdef-title">編輯班別</h2>
+      <button class="modal-close" onclick="closeModal('shiftdef-overlay')">✕</button>
+    </div>
+    <input type="hidden" id="sd-code">
+    <div class="form-row">
+      <div class="form-group"><label>班別代碼</label><input type="text" id="sd-name" placeholder="A" maxlength="3"></div>
+      <div class="form-group"><label>工時（小時）</label><input type="number" id="sd-hours" step="0.5" min="0" max="24"></div>
+    </div>
+    <div class="form-group"><label>時間說明</label><input type="text" id="sd-time" placeholder="15:00～23:30"></div>
+    <div class="form-row">
+      <div class="form-group"><label>背景色</label><input type="color" id="sd-color" value="#FFE066"></div>
+      <div class="form-group"><label>文字色</label><input type="color" id="sd-textcolor" value="#333333"></div>
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="sd-isoff" style="width:auto;margin-right:6px">這是休假/不計工時</label>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal('shiftdef-overlay')">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveShiftDef()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== DEFAULT DATA =====
+const DEFAULT_SHIFTS = {
+  A:  {name:'A班', time:'15:00～23:30', hours:8.5, breakH:0.5, color:'#FFE066', textColor:'#333', isOff:false},
+  B:  {name:'B班', time:'16:00～23:30', hours:7.5, breakH:0,   color:'#FFD700', textColor:'#333', isOff:false},
+  C:  {name:'C班', time:'17:00～22:30', hours:5.5, breakH:0,   color:'#90EE90', textColor:'#333', isOff:false},
+  C2: {name:'C2班',time:'17:30～23:30', hours:6.0, breakH:0,   color:'#7FD9A0', textColor:'#333', isOff:false},
+  D:  {name:'D班', time:'18:00～22:30', hours:4.5, breakH:0,   color:'#87CEEB', textColor:'#333', isOff:false},
+  D1: {name:'D1班',time:'18:30～22:30', hours:4.0, breakH:0,   color:'#ADD8E6', textColor:'#333', isOff:false},
+  E:  {name:'E班', time:'09:00～17:30', hours:8.5, breakH:0.5, color:'#DDA0DD', textColor:'#333', isOff:false},
+  F:  {name:'F班', time:'11:00～14:00\n17:30～22:30', hours:8.0, breakH:0, color:'#FFA07A', textColor:'#c0392b', isOff:false},
+  H:  {name:'H班', time:'11:00～14:00\n17:00～22:00', hours:8.0, breakH:0, color:'#FFB6C1', textColor:'#333', isOff:false},
+  '休': {name:'休假', time:'－', hours:0, breakH:0, color:'#f5f5f5', textColor:'#aaa', isOff:true},
+  '國': {name:'國定假日', time:'國定假日', hours:0, breakH:0, color:'#ff7675', textColor:'#fff', isOff:false},
+};
+
+// ===== STATE =====
+let state = {
+  curYear: new Date().getFullYear(),
+  curMonth: new Date().getMonth()+1,
+  salYear: new Date().getFullYear(),
+  salMonth: new Date().getMonth()+1,
+  pendingCell: null,
+  pendingShift: null,
+};
+
+// ===== STORAGE =====
+function load(key, def){ try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;} }
+function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); }
+
+function getEmployees(){ return load('mala_employees',[]); }
+function saveEmployees(d){ save('mala_employees',d); }
+function getShifts(){ return {...DEFAULT_SHIFTS,...load('mala_shifts',{})}; }
+function saveShifts(d){ save('mala_shifts',d); }
+function getSchedule(y,m){ return load(`mala_sch_${y}_${m}`,{}); }
+function saveSchedule(y,m,d){ save(`mala_sch_${y}_${m}`,d); }
+function getSettings(){ return {...{regularHours:8,ot1:1.33,ot2:1.67,holRate:2.0},...load('mala_settings',{})}; }
+function saveSetting(k,v){ const s=getSettings();s[k]=parseFloat(v)||v;save('mala_settings',s); }
+function getHolidays(y,m){ return load(`mala_hol_${y}_${m}`,[]); }
+function saveHolidays(y,m,d){ save(`mala_hol_${y}_${m}`,d); }
+
+// ===== HELPERS =====
+function daysInMonth(y,m){ return new Date(y,m,0).getDate(); }
+function weekday(y,m,d){ return new Date(y,m-1,d).getDay(); } // 0=Sun
+function wd(n){ return ['日','一','二','三','四','五','六'][n]; }
+function fmt(n){ return String(n).padStart(2,'0'); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+
+function showToast(msg,ms=2000){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+function showPage(name, btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='schedule') renderSchedule();
+  if(name==='employees') renderEmployees();
+  if(name==='salary') renderSalary();
+  if(name==='settings') renderSettings();
+}
+
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+// ===== SCHEDULE PAGE =====
+function changeMonth(d){
+  state.curMonth+=d;
+  if(state.curMonth>12){state.curMonth=1;state.curYear++;}
+  if(state.curMonth<1){state.curMonth=12;state.curYear--;}
+  renderSchedule();
+}
+
+function renderSchedule(){
+  const y=state.curYear, m=state.curMonth;
+  document.getElementById('month-label').textContent=`${y} 年 ${m} 月`;
+  const days=daysInMonth(y,m);
+  const emps=getEmployees();
+  const sch=getSchedule(y,m);
+  const shifts=getShifts();
+  const holidays=getHolidays(y,m);
+
+  // Stat bar
+  renderStatBar(y,m,emps,sch,shifts,holidays);
+
+  // Table
+  const tbl=document.getElementById('sch-table');
+  let html='<thead><tr class="hdr-row"><th class="sticky-col">員工</th>';
+  for(let d=1;d<=days;d++){
+    const wk=weekday(y,m,d);
+    const isHol=holidays.includes(d);
+    const cls=isHol||wk===0?'day-sun':(wk===6?'day-sat':'');
+    html+=`<th class="${cls}">${d}<br><span>${wd(wk)}</span></th>`;
+  }
+  html+='<th>出勤</th><th>時數</th></tr></thead><tbody>';
+
+  emps.forEach(emp=>{
+    const empSch=sch[emp.id]||{};
+    let workDays=0, totalH=0;
+    html+=`<tr><td class="sticky-col">${emp.name}</td>`;
+    for(let d=1;d<=days;d++){
+      const code=empSch[d]||'';
+      const sh=shifts[code];
+      const bg=sh?sh.color:'#fff';
+      const tc=sh?sh.textColor:'#ccc';
+      const wk=weekday(y,m,d);
+      const isHol=holidays.includes(d);
+      if(sh&&!sh.isOff){ workDays++; totalH+=calcWorkHours(sh); }
+      html+=`<td class="shift-cell" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${code||'　'}</td>`;
+    }
+    html+=`<td style="background:#f9f9f9;font-weight:600">${workDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
+  });
+
+  // 每日人數
+  html+='<tr class="count-row"><td class="sticky-col" style="background:#fff9e6">人數</td>';
+  let totalCount=0;
+  for(let d=1;d<=days;d++){
+    let cnt=0;
+    emps.forEach(emp=>{
+      const code=(sch[emp.id]||{})[d]||'';
+      const sh=shifts[code];
+      if(sh&&!sh.isOff&&code) cnt++;
+    });
+    totalCount+=cnt;
+    html+=`<td style="background:#fff9e6;font-weight:600">${cnt||''}</td>`;
+  }
+  html+=`<td style="background:#fff9e6;font-weight:600">${(totalCount/days).toFixed(1)}</td><td></td></tr>`;
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+function calcWorkHours(sh){
+  if(!sh||sh.isOff) return 0;
+  return Math.max(sh.hours-(sh.breakH||0),0);
+}
+
+function renderStatBar(y,m,emps,sch,shifts,holidays){
+  const days=daysInMonth(y,m);
+  let totalWork=0,totalH=0,totalOT=0;
+  const settings=getSettings();
+  emps.forEach(emp=>{
+    const empSch=sch[emp.id]||{};
+    for(let d=1;d<=days;d++){
+      const code=empSch[d]||'';
+      const sh=shifts[code];
+      if(sh&&!sh.isOff){
+        totalWork++;
+        const h=calcWorkHours(sh);
+        totalH+=h;
+        totalOT+=Math.max(h-settings.regularHours,0);
+      }
+    }
+  });
+  document.getElementById('stat-bar').innerHTML=`
+    <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
+    <div class="stat-chip"><div class="sv">${totalWork}</div><div class="sl">總出勤</div></div>
+    <div class="stat-chip"><div class="sv">${totalH.toFixed(0)}</div><div class="sl">總時數</div></div>
+    <div class="stat-chip"><div class="sv">${totalOT.toFixed(0)}</div><div class="sl">加班時數</div></div>
+    <div class="stat-chip"><div class="sv">${days}</div><div class="sl">天數</div></div>
+  `;
+}
+
+// ===== SHIFT PICKER =====
+function openShiftPicker(empId, day){
+  state.pendingCell={empId,day};
+  state.pendingShift=null;
+  const y=state.curYear,m=state.curMonth;
+  const sch=getSchedule(y,m);
+  const cur=(sch[empId]||{})[day]||'';
+  const emp=getEmployees().find(e=>e.id===empId);
+  const wk=weekday(y,m,day);
+  document.getElementById('shift-modal-title').textContent=`${emp?.name} | ${m}/${day}（${wd(wk)}）`;
+
+  const shifts=getShifts();
+  let html='';
+  Object.entries(shifts).forEach(([code,sh])=>{
+    const sel=code===cur?'selected':'';
+    html+=`<div class="sp-btn ${sel}" style="background:${sh.color};color:${sh.textColor}" onclick="selectShiftOpt('${code}',this)">${code}</div>`;
+  });
+  // clear option
+  html+=`<div class="sp-btn ${cur===''?'selected':''}" style="background:#f0f0f0;color:#888" onclick="selectShiftOpt('',this)">清除</div>`;
+  document.getElementById('shift-picker-grid').innerHTML=html;
+  updateShiftInfo(cur);
+  openModal('shift-overlay');
+}
+
+function selectShiftOpt(code, el){
+  state.pendingShift=code;
+  document.querySelectorAll('#shift-picker-grid .sp-btn').forEach(b=>b.classList.remove('selected'));
+  el.classList.add('selected');
+  updateShiftInfo(code);
+}
+
+function updateShiftInfo(code){
+  const shifts=getShifts();
+  const sh=shifts[code];
+  const box=document.getElementById('shift-info-box');
+  if(!sh||!code){box.textContent='點選班別後確定';return;}
+  const h=calcWorkHours(sh);
+  box.textContent=`${sh.name}｜${sh.time}｜工時 ${h}h`;
+}
+
+function applyShift(){
+  if(state.pendingShift===null){showToast('請選擇班別');return;}
+  const {empId,day}=state.pendingCell;
+  const y=state.curYear,m=state.curMonth;
+  const sch=getSchedule(y,m);
+  if(!sch[empId]) sch[empId]={};
+  if(state.pendingShift===''){
+    delete sch[empId][day];
+  } else {
+    sch[empId][day]=state.pendingShift;
+  }
+  saveSchedule(y,m,sch);
+  closeModal('shift-overlay');
+  renderSchedule();
+}
+
+// ===== EMPLOYEE PAGE =====
+function renderEmployees(){
+  const emps=getEmployees();
+  const el=document.getElementById('emp-list');
+  if(!emps.length){
+    el.innerHTML='<div style="text-align:center;padding:24px;color:var(--gray)">尚無員工，點右下角 ＋ 新增</div>';
+    return;
+  }
+  el.innerHTML=emps.map(e=>`
+    <div class="emp-item">
+      <div class="emp-avatar">${e.name[0]}</div>
+      <div class="emp-info">
+        <div class="name">${e.name}</div>
+        <div class="sub">${e.phone||'－'} ｜ 時薪 $${e.wage||0}</div>
+        <div class="sub">到職：${e.hireDate||'－'}</div>
+      </div>
+      <div class="emp-actions">
+        <button class="btn btn-outline btn-sm" onclick="openEmpModal('${e.id}')">編輯</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">刪除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openEmpModal(id=''){
+  document.getElementById('emp-modal-title').textContent=id?'編輯員工':'新增員工';
+  const emps=getEmployees();
+  const e=emps.find(x=>x.id===id)||{};
+  document.getElementById('emp-id').value=e.id||'';
+  document.getElementById('emp-name').value=e.name||'';
+  document.getElementById('emp-hire').value=e.hireDate||'';
+  document.getElementById('emp-phone').value=e.phone||'';
+  document.getElementById('emp-wage').value=e.wage||'';
+  document.getElementById('emp-base').value=e.base||'';
+  document.getElementById('emp-ins').value=e.insurance||'';
+  document.getElementById('emp-dorm').value=e.dormitory||'';
+  openModal('emp-overlay');
+}
+
+function saveEmployee(){
+  const name=document.getElementById('emp-name').value.trim();
+  const wage=parseFloat(document.getElementById('emp-wage').value)||0;
+  if(!name){showToast('請輸入姓名');return;}
+  const emps=getEmployees();
+  const id=document.getElementById('emp-id').value||uid();
+  const idx=emps.findIndex(e=>e.id===id);
+  const emp={
+    id,name,
+    hireDate:document.getElementById('emp-hire').value,
+    phone:document.getElementById('emp-phone').value.trim(),
+    wage,
+    base:parseFloat(document.getElementById('emp-base').value)||0,
+    insurance:parseFloat(document.getElementById('emp-ins').value)||0,
+    dormitory:parseFloat(document.getElementById('emp-dorm').value)||0,
+  };
+  if(idx>=0) emps[idx]=emp; else emps.push(emp);
+  saveEmployees(emps);
+  closeModal('emp-overlay');
+  renderEmployees();
+  showToast(idx>=0?'已更新員工資料':'已新增員工');
+}
+
+function deleteEmployee(id){
+  if(!confirm('確定刪除此員工？')) return;
+  const emps=getEmployees().filter(e=>e.id!==id);
+  saveEmployees(emps);
+  renderEmployees();
+  showToast('已刪除員工');
+}
+
+// ===== SALARY PAGE =====
+function changeSalMonth(d){
+  state.salMonth+=d;
+  if(state.salMonth>12){state.salMonth=1;state.salYear++;}
+  if(state.salMonth<1){state.salMonth=12;state.salYear--;}
+  renderSalary();
+}
+
+function calcSalary(empId, y, m){
+  const emps=getEmployees();
+  const emp=emps.find(e=>e.id===empId);
+  if(!emp) return null;
+  const sch=getSchedule(y,m);
+  const shifts=getShifts();
+  const settings=getSettings();
+  const holidays=getHolidays(y,m);
+  const empSch=sch[empId]||{};
+  const days=daysInMonth(y,m);
+
+  let workDays=0, restDays=0, totalH=0, regularPay=0, otPay=0, holPay=0;
+
+  for(let d=1;d<=days;d++){
+    const code=empSch[d]||'';
+    const sh=shifts[code];
+    if(!sh) continue;
+    if(sh.isOff){ restDays++; continue; }
+
+    const wk=weekday(y,m,d);
+    const isHol=holidays.includes(d);
+    const h=calcWorkHours(sh);
+    workDays++;
+    totalH+=h;
+
+    const wage=emp.wage||0;
+    const regH=Math.min(h,settings.regularHours);
+    const otH=Math.max(h-settings.regularHours,0);
+
+    if(isHol){
+      // 國定假日：全部以假日倍率計算
+      holPay+=h*wage*settings.holRate;
+    } else {
+      regularPay+=regH*wage;
+      const ot1=Math.min(otH,2)*wage*settings.ot1;
+      const ot2=Math.max(otH-2,0)*wage*settings.ot2;
+      otPay+=ot1+ot2;
+    }
+  }
+
+  const grossPay=Math.round(regularPay+otPay+holPay+(emp.base||0));
+  const deductions=(emp.insurance||0)+(emp.dormitory||0);
+  const netPay=grossPay-deductions;
+
+  return {emp,workDays,restDays,totalH,regularPay,otPay,holPay,grossPay,deductions,netPay};
+}
+
+function renderSalary(){
+  const y=state.salYear, m=state.salMonth;
+  document.getElementById('sal-month-label').textContent=`${y} 年 ${m} 月`;
+  const emps=getEmployees();
+  if(!emps.length){
+    document.getElementById('salary-content').innerHTML='<div class="card" style="text-align:center;color:var(--gray);padding:24px">尚無員工資料</div>';
+    return;
+  }
+
+  let totalGross=0, totalNet=0;
+  let rows='';
+  emps.forEach(emp=>{
+    const r=calcSalary(emp.id,y,m);
+    if(!r) return;
+    totalGross+=r.grossPay;
+    totalNet+=r.netPay;
+    rows+=`
+      <div class="sal-item">
+        <div class="sal-name">${r.emp.name}</div>
+        <div class="sal-tags">
+          <span class="sal-tag">出勤 ${r.workDays} 天</span>
+          <span class="sal-tag">時數 ${r.totalH.toFixed(1)}h</span>
+          <span class="sal-tag">底薪 $${(r.regularPay+r.emp.base).toFixed(0)}</span>
+          ${r.otPay>0?`<span class="sal-tag" style="color:#e67e22">加班 $${r.otPay.toFixed(0)}</span>`:''}
+          ${r.holPay>0?`<span class="sal-tag" style="color:#e74c3c">假日 $${r.holPay.toFixed(0)}</span>`:''}
+        </div>
+        <div class="sal-total">實領 $${r.netPay.toLocaleString()}</div>
+        ${r.deductions>0?`<div class="sal-deduct">扣除：保險 $${r.emp.insurance||0} ＋ 宿舍 $${r.emp.dormitory||0} = $${r.deductions}</div>`:''}
+      </div>`;
+  });
+
+  document.getElementById('salary-content').innerHTML=`
+    <div class="card" style="background:var(--red);color:#fff;border-radius:12px;margin:12px">
+      <div style="font-size:13px;opacity:.85;margin-bottom:4px">${y}年${m}月 薪資總計</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div style="font-size:12px;opacity:.75">總應付</div><div style="font-size:24px;font-weight:700">$${totalGross.toLocaleString()}</div></div>
+        <div style="text-align:right"><div style="font-size:12px;opacity:.75">總實領</div><div style="font-size:24px;font-weight:700">$${totalNet.toLocaleString()}</div></div>
+      </div>
+    </div>
+    <div class="card">${rows}</div>`;
+}
+
+// ===== SETTINGS PAGE =====
+function renderSettings(){
+  const shifts=getShifts();
+  const settings=getSettings();
+  document.getElementById('set-regular-hours').value=settings.regularHours;
+  document.getElementById('set-ot1').value=settings.ot1;
+  document.getElementById('set-ot2').value=settings.ot2;
+  document.getElementById('set-hol').value=settings.holRate;
+
+  // Shift defs
+  let html='';
+  Object.entries(shifts).forEach(([code,sh])=>{
+    html+=`<div class="shift-def-row">
+      <span class="shift-badge" style="background:${sh.color};color:${sh.textColor}">${code}</span>
+      <span style="flex:1;margin:0 10px">
+        <span style="font-weight:600">${sh.name}</span><br>
+        <span style="font-size:12px;color:var(--gray)">${sh.time} ｜ ${calcWorkHours(sh)}h</span>
+      </span>
+      <button class="btn btn-outline btn-sm" onclick="openShiftDef('${code}')">編輯</button>
+    </div>`;
+  });
+  html+=`<button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%" onclick="openShiftDef('')">＋ 新增班別</button>`;
+  document.getElementById('shift-defs').innerHTML=html;
+
+  // Holiday setting
+  renderHolidaySetting();
+}
+
+function renderHolidaySetting(){
+  const y=state.curYear,m=state.curMonth;
+  const days=daysInMonth(y,m);
+  const holidays=getHolidays(y,m);
+  let html=`<div style="font-size:12px;color:var(--gray);margin-bottom:8px">選擇 ${y}年${m}月 的國定假日日期：</div><div style="display:flex;flex-wrap:wrap;gap:8px">`;
+  for(let d=1;d<=days;d++){
+    const wk=weekday(y,m,d);
+    const isHol=holidays.includes(d);
+    html+=`<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+      <input type="checkbox" ${isHol?'checked':''} onchange="toggleHoliday(${d},this.checked)" style="width:auto">
+      <span style="${wk===0||wk===6?'color:var(--red)':''}">${m}/${d}(${wd(wk)})</span>
+    </label>`;
+  }
+  html+='</div>';
+  document.getElementById('holiday-setting').innerHTML=html;
+}
+
+function toggleHoliday(day,checked){
+  const y=state.curYear,m=state.curMonth;
+  let hols=getHolidays(y,m);
+  if(checked&&!hols.includes(day)) hols.push(day);
+  if(!checked) hols=hols.filter(d=>d!==day);
+  saveHolidays(y,m,hols);
+}
+
+function openShiftDef(code){
+  const shifts=getShifts();
+  const sh=shifts[code]||{color:'#FFE066',textColor:'#333',hours:8,time:'',isOff:false,name:''};
+  document.getElementById('shiftdef-title').textContent=code?`編輯班別 ${code}`:'新增班別';
+  document.getElementById('sd-code').value=code;
+  document.getElementById('sd-name').value=code;
+  document.getElementById('sd-hours').value=sh.hours;
+  document.getElementById('sd-time').value=sh.time;
+  document.getElementById('sd-color').value=sh.color;
+  document.getElementById('sd-textcolor').value=sh.textColor;
+  document.getElementById('sd-isoff').checked=sh.isOff;
+  openModal('shiftdef-overlay');
+}
+
+function saveShiftDef(){
+  const code=document.getElementById('sd-code').value;
+  const newCode=document.getElementById('sd-name').value.trim();
+  if(!newCode){showToast('請輸入班別代碼');return;}
+  const shifts=load('mala_shifts',{});
+  if(code&&code!==newCode) delete shifts[code];
+  shifts[newCode]={
+    name:newCode+'班',
+    time:document.getElementById('sd-time').value,
+    hours:parseFloat(document.getElementById('sd-hours').value)||0,
+    breakH:0,
+    color:document.getElementById('sd-color').value,
+    textColor:document.getElementById('sd-textcolor').value,
+    isOff:document.getElementById('sd-isoff').checked,
+  };
+  saveShifts(shifts);
+  closeModal('shiftdef-overlay');
+  renderSettings();
+  showToast('班別已儲存');
+}
+
+// ===== PDF EXPORT =====
+async function exportPDF(){
+  showToast('準備匯出PDF...',3000);
+  await new Promise(r=>setTimeout(r,300));
+  const el=document.querySelector('.tbl-wrap');
+  const canvas=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#fff'});
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const y=state.curYear,m=state.curMonth;
+  pdf.setFontSize(14);
+  pdf.text(`麻的小辛辣 ${y}年${m}月 班表`,10,12);
+  const iw=canvas.width,ih=canvas.height;
+  const pw=277,ph=190;
+  const ratio=Math.min(pw/iw,ph/ih);
+  pdf.addImage(canvas.toDataURL('image/png'),10,18,iw*ratio,ih*ratio);
+  pdf.save(`班表_${y}${fmt(m)}.pdf`);
+  showToast('✅ 班表PDF已下載');
+}
+
+async function exportSalaryPDF(){
+  showToast('準備匯出薪資PDF...',3000);
+  await new Promise(r=>setTimeout(r,300));
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({unit:'mm',format:'a4'});
+  const y=state.salYear,m=state.salMonth;
+  const emps=getEmployees();
+  const settings=getSettings();
+
+  pdf.setFont('helvetica','bold');
+  pdf.setFontSize(16);
+  pdf.text(`${y}年${m}月 薪資明細`, 105, 20, {align:'center'});
+  pdf.setFontSize(11);
+  pdf.text('麻的小辛辣', 105, 28, {align:'center'});
+
+  let yPos=38;
+  let totalGross=0,totalNet=0;
+
+  // Table header
+  pdf.setFillColor(231,76,60);
+  pdf.rect(10,yPos,190,8,'F');
+  pdf.setTextColor(255,255,255);
+  pdf.setFont('helvetica','bold');
+  pdf.setFontSize(9);
+  ['姓名','出勤天數','時數','底薪','加班費','假日費','應發','扣除','實領'].forEach((h,i)=>{
+    const x=[10,45,65,82,102,122,142,162,172];
+    pdf.text(h, x[i]+1, yPos+5.5);
+  });
+  yPos+=8;
+  pdf.setTextColor(0,0,0);
+
+  emps.forEach((emp,idx)=>{
+    const r=calcSalary(emp.id,y,m);
+    if(!r) return;
+    totalGross+=r.grossPay; totalNet+=r.netPay;
+    if(idx%2===0) pdf.setFillColor(249,249,249);
+    else pdf.setFillColor(255,255,255);
+    pdf.rect(10,yPos,190,7,'F');
+    pdf.setFont('helvetica','normal');
+    pdf.setFontSize(9);
+    const row=[
+      r.emp.name,
+      r.workDays+'天',
+      r.totalH.toFixed(1)+'h',
+      '$'+(r.regularPay+r.emp.base).toFixed(0),
+      '$'+r.otPay.toFixed(0),
+      '$'+r.holPay.toFixed(0),
+      '$'+r.grossPay.toLocaleString(),
+      '$'+r.deductions.toLocaleString(),
+      '$'+r.netPay.toLocaleString(),
+    ];
+    const x=[10,45,65,82,102,122,142,162,172];
+    row.forEach((v,i)=>pdf.text(v,x[i]+1,yPos+5));
+    yPos+=7;
+    if(yPos>270){pdf.addPage();yPos=20;}
+  });
+
+  // Total row
+  yPos+=3;
+  pdf.setFillColor(255,230,100);
+  pdf.rect(10,yPos,190,8,'F');
+  pdf.setFont('helvetica','bold');
+  pdf.setFontSize(9);
+  pdf.text('合計',11,yPos+5.5);
+  pdf.text('$'+totalGross.toLocaleString(),142,yPos+5.5);
+  pdf.text('$'+totalNet.toLocaleString(),172,yPos+5.5);
+
+  pdf.setFont('helvetica','normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(150,150,150);
+  pdf.text(`加班計算：正常工時${settings.regularHours}h, 前2h×${settings.ot1}, 超過×${settings.ot2}`, 10, yPos+20);
+
+  pdf.save(`薪資_${y}${fmt(m)}.pdf`);
+  showToast('✅ 薪資PDF已下載');
+}
+
+function clearAllData(){
+  if(!confirm('確定要清除所有資料？此操作無法復原！')) return;
+  const keys=[];
+  for(let i=0;i<localStorage.length;i++){
+    if(localStorage.key(i).startsWith('mala_')) keys.push(localStorage.key(i));
+  }
+  keys.forEach(k=>localStorage.removeItem(k));
+  showToast('已清除所有資料');
+  renderSchedule();
+  renderEmployees();
+  renderSalary();
+  renderSettings();
+}
+
+// ===== DEMO DATA =====
+function loadDemoData(){
+  if(getEmployees().length) return;
+  const emps=[
+    {id:uid(),name:'張羽成',hireDate:'2022-10-01',phone:'0905110529',wage:200,base:0,insurance:1228,dormitory:1500},
+    {id:uid(),name:'蕭彣芳',hireDate:'2024-05-01',phone:'0922568551',wage:200,base:0,insurance:1228,dormitory:3500},
+    {id:uid(),name:'陳盈如',hireDate:'2025-10-01',phone:'0900755124',wage:183,base:0,insurance:1228,dormitory:0},
+    {id:uid(),name:'許雅筑',hireDate:'2024-08-05',phone:'0979318500',wage:183,base:0,insurance:0,dormitory:0},
+    {id:uid(),name:'王鈺屏',hireDate:'2024-12-01',phone:'0986164309',wage:183,base:0,insurance:0,dormitory:0},
+    {id:uid(),name:'林宸妤',hireDate:'2025-04-14',phone:'0937505891',wage:183,base:0,insurance:0,dormitory:0},
+    {id:uid(),name:'徐佑昕',hireDate:'2025-07-17',phone:'0976446192',wage:183,base:0,insurance:0,dormitory:1750},
+    {id:uid(),name:'王禹婕',hireDate:'2026-03-01',phone:'0906113593',wage:183,base:0,insurance:0,dormitory:1750},
+  ];
+  saveEmployees(emps);
+}
+
+// ===== TAIWAN 2026 OFFICIAL HOLIDAYS =====
+// Source: 行政院人事行政總處 2026年政府行事曆
+const TW_HOLIDAYS = {
+  2026: {
+    1:  [1],                        // 元旦
+    2:  [16,17,18,19,20,27,28],    // 除夕+春節, 和平紀念日+補假
+    3:  [2],                        // 和平紀念日補假
+    4:  [3,4,6],                   // 兒童節+清明節+補假
+    5:  [1],                        // 勞動節
+    6:  [19,22],                   // 端午節+補假
+    9:  [19,21],                   // 中秋節+補假
+    10: [9,10],                    // 國慶日+補假
+  }
+};
+
+function autoLoadTWHolidays(y, m){
+  const hols = getHolidays(y, m);
+  if(hols.length) return; // already set by user
+  const preset = (TW_HOLIDAYS[y]||{})[m]||[];
+  if(preset.length){
+    saveHolidays(y, m, preset);
+  }
+}
+
+// ===== INIT =====
+loadDemoData();
+// Auto-load TW holidays for current and next few months
+const now = new Date();
+for(let i=0; i<12; i++){
+  let mm = now.getMonth()+1+i, yy = now.getFullYear();
+  if(mm>12){mm-=12;yy++;}
+  autoLoadTWHolidays(yy, mm);
+}
+renderSchedule();
+</script>
+</body>
+</html>
