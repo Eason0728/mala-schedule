@@ -462,15 +462,16 @@ function renderSchedule(){
     const empSch=sch[emp.id]||{};
     let workDays=0, totalH=0;
     const hireStr=emp.hireDate?emp.hireDate.slice(0,7).replace('-','/'):'';
-    const entitle=calcLeaveEntitlement(emp.hireDate);
+    const entitle=emp.isFullTime?calcLeaveEntitlement(emp.hireDate):0;
     const used=calcLeaveUsed(emp.id, y);
     const remain=Math.max(entitle-used,0);
     const reqH=emp.isFullTime?calcRequiredHours(y,m):null;
     html+=`<tr><td class="sticky-col">
       <div class="emp-cell-name">${emp.name}</div>
       <div class="emp-cell-sub">到職 ${hireStr}</div>
-      <div class="emp-cell-leave">特休剩 ${remain}天</div>
-      ${reqH!==null?`<div class="emp-cell-req">應出 ${reqH}h</div>`:''}
+      ${emp.isFullTime
+        ? `<div class="emp-cell-leave">特休剩 ${remain}天</div><div class="emp-cell-req">應出 ${reqH}h</div>`
+        : `<div class="emp-cell-sub" style="color:#3498db">計時</div>`}
     </td>`;
     for(let d=1;d<=days;d++){
       const code=empSch[d]||'';
