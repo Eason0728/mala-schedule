@@ -319,8 +319,10 @@ let state = {
 };
 
 // ===== STORAGE (localStorage + GitHub Gist sync) =====
+let _suppressPush=false;   // true while we write data programmatically (pull/init) so we never echo-push
+let _synced=false;         // becomes true after first successful cloud pull
 function load(key, def){ try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;} }
-function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); scheduleGistPush(); }
+function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); if(!_suppressPush) scheduleGistPush(); }
 
 function getEmployees(){ return load('mala_employees',[]); }
 function saveEmployees(d){ save('mala_employees',d); }
@@ -377,13 +379,16 @@ async function pushToGist(showMsg=true){
   }catch(e){ if(showMsg) showToast('⚠️ 同步失敗：'+e.message); }
 }
 
-async function pullFromGist(){
+async function pullFromGist(silent){
   const cfg=getGistCfg();
-  if(!cfg){ showToast('請先設定 Gist 同步'); return; }
-  showToast('同步中...', 2000);
+  if(!cfg){ if(!silent) showToast('請先設定 Gist 同步'); return; }
+  // Never clobber unsaved local edits: if a push is pending, skip this pull
+  if(_pushTimer){ return; }
+  if(!silent) showToast('同步中...', 2000);
   try{
     const r=await fetch(`https://api.github.com/gists/${cfg.gistId}`,{
-      headers:{'Authorization':'Bearer '+cfg.token}
+      headers:{'Authorization':'Bearer '+cfg.token},
+      cache:'no-store'
     });
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
@@ -391,26 +396,19 @@ async function pullFromGist(){
     if(!content) return;
     const snap=JSON.parse(content);
     if(snap._init) return;
+    _suppressPush=true;
     Object.entries(snap).forEach(([k,v])=>{
       localStorage.setItem(k, JSON.stringify(v));
     });
+    _suppressPush=false;
+    _synced=true;
     renderSchedule(); renderEmployees(); renderSalary();
-    showToast('✅ 已從雲端同步');
-  }catch(e){ showToast('⚠️ 同步失敗：'+e.message); }
+    if(!silent) showToast('✅ 已從雲端同步');
+  }catch(e){ _suppressPush=false; if(!silent) showToast('⚠️ 同步失敗：'+e.message); }
 }
 
-// Auto-pull on load, then poll every 30s
-(async()=>{
-  // Check for setup token in URL hash: #gist=ID&token=TOKEN
-  const hash=location.hash.slice(1);
-  if(hash.includes('gist=')){
-    const p=new URLSearchParams(hash);
-    const gistId=p.get('gist'), token=p.get('token');
-    if(gistId&&token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
-  }
-  const cfg=getGistCfg();
-  if(cfg){ await pullFromGist(); setInterval(()=>pullFromGist(), 30000); }
-})();
+// Polling wrapper: skip if local edits are pending (handled inside pullFromGist too)
+function startGistPolling(){ setInterval(()=>pullFromGist(true), 30000); }
 
 // ===== HELPERS =====
 function daysInMonth(y,m){ return new Date(y,m,0).getDate(); }
@@ -1151,14 +1149,15 @@ function clearAllData(){
 function loadDemoData(){
   if(getEmployees().length) return;
   const emps=[
-    {id:uid(),name:'張羽成',hireDate:'2022-10-01',phone:'0905110529',wage:200,base:0,insurance:1228,dormitory:1500},
-    {id:uid(),name:'蕭彣芳',hireDate:'2024-05-01',phone:'0922568551',wage:200,base:0,insurance:1228,dormitory:3500},
-    {id:uid(),name:'陳盈如',hireDate:'2025-10-01',phone:'0900755124',wage:183,base:0,insurance:1228,dormitory:0},
-    {id:uid(),name:'許雅筑',hireDate:'2024-08-05',phone:'0979318500',wage:183,base:0,insurance:0,dormitory:0},
-    {id:uid(),name:'王鈺屏',hireDate:'2024-12-01',phone:'0986164309',wage:183,base:0,insurance:0,dormitory:0},
-    {id:uid(),name:'林宸妤',hireDate:'2025-04-14',phone:'0937505891',wage:183,base:0,insurance:0,dormitory:0},
-    {id:uid(),name:'徐佑昕',hireDate:'2025-07-17',phone:'0976446192',wage:183,base:0,insurance:0,dormitory:1750},
-    {id:uid(),name:'王禹婕',hireDate:'2026-03-01',phone:'0906113593',wage:183,base:0,insurance:0,dormitory:1750},
+    {id:uid(),name:'張羽成',hireDate:'2022-10-01',phone:'0905110529',wage:200,base:0,insurance:1228,dormitory:1500,isFullTime:true},
+    {id:uid(),name:'蕭彣芳',hireDate:'2024-05-01',phone:'0922568551',wage:200,base:0,insurance:1228,dormitory:3500,isFullTime:true},
+    {id:uid(),name:'陳盈如',hireDate:'2025-10-01',phone:'0900755124',wage:183,base:0,insurance:1228,dormitory:0,isFullTime:true},
+    {id:uid(),name:'張群振',hireDate:'2026-05-01',phone:'0900091950',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
+    {id:uid(),name:'許雅筑',hireDate:'2024-08-05',phone:'0979318500',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
+    {id:uid(),name:'王鈺屏',hireDate:'2024-12-01',phone:'0986164309',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
+    {id:uid(),name:'林宸妤',hireDate:'2025-04-14',phone:'0937505891',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
+    {id:uid(),name:'徐佑昕',hireDate:'2025-07-17',phone:'0976446192',wage:183,base:0,insurance:0,dormitory:1750,isFullTime:false},
+    {id:uid(),name:'王禹婕',hireDate:'2026-03-01',phone:'0906113593',wage:183,base:0,insurance:0,dormitory:1750,isFullTime:false},
   ];
   saveEmployees(emps);
 }
@@ -1180,23 +1179,45 @@ const TW_HOLIDAYS = {
 
 function autoLoadTWHolidays(y, m){
   const hols = getHolidays(y, m);
-  if(hols.length) return; // already set by user
+  if(hols.length) return; // already set
   const preset = (TW_HOLIDAYS[y]||{})[m]||[];
-  if(preset.length){
-    saveHolidays(y, m, preset);
-  }
+  // write directly (no cloud push) — defaults shouldn't overwrite the cloud
+  if(preset.length) localStorage.setItem(`mala_hol_${y}_${m}`, JSON.stringify(preset));
 }
 
-// ===== INIT =====
-loadDemoData();
-// Auto-load TW holidays for current and next few months
-const now = new Date();
-for(let i=0; i<12; i++){
-  let mm = now.getMonth()+1+i, yy = now.getFullYear();
-  if(mm>12){mm-=12;yy++;}
-  autoLoadTWHolidays(yy, mm);
+function seedHolidays(){
+  _suppressPush=true;
+  const now=new Date();
+  for(let i=0;i<12;i++){
+    let mm=now.getMonth()+1+i, yy=now.getFullYear();
+    if(mm>12){mm-=12;yy++;}
+    autoLoadTWHolidays(yy,mm);
+  }
+  _suppressPush=false;
 }
-renderSchedule();
+
+// ===== INIT (cloud-first, never clobbers the cloud with demo/empty data) =====
+(async function init(){
+  // 1) capture setup config from URL hash: #gist=ID&token=TOKEN
+  const hash=location.hash.slice(1);
+  if(hash.includes('gist=')){
+    const p=new URLSearchParams(hash);
+    const gistId=p.get('gist'), token=p.get('token');
+    if(gistId&&token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
+  }
+  const cfg=getGistCfg();
+  // 2) if connected, pull the cloud copy FIRST and start polling
+  if(cfg){
+    await pullFromGist(false);
+    startGistPolling();
+  }
+  // 3) only seed demo data for a brand-new standalone user (no cloud, no data)
+  if(!cfg && !getEmployees().length){ loadDemoData(); }
+  // 4) fill in default holidays for months the cloud didn't define (no push)
+  seedHolidays();
+  // 5) render
+  renderSchedule();
+})();
 </script>
 </body>
 </html>
