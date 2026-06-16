@@ -558,7 +558,10 @@ function renderSchedule(){
       let bg=colBg, tc='#ccc', cls='shift-cell', disp=code||'　';
       if(sh){
         if(isWorking){ tc='#000'; }                          // 班別：無網底、黑字（六日仍套用欄位網底）
-        else if(sh.diag){ cls+=' diag-off'; tc='transparent'; disp='　'; } // 指定休：紅斜線
+        else if(sh.diag){                                    // 指定休：紅斜線（直接內嵌，避免被 inline background 覆蓋）
+          tc='transparent'; disp='　';
+          bg=`${colBg} linear-gradient(to top right,transparent calc(50% - 1.2px),#e74c3c calc(50% - 1.2px),#e74c3c calc(50% + 1.2px),transparent calc(50% + 1.2px)) no-repeat`;
+        }
         else { bg=sh.color; tc='#e74c3c'; }                  // 其他休假：保留網底、紅字
       }
       if(isWorking){ totalH+=calcWorkHours(sh); }
