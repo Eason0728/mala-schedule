@@ -502,7 +502,10 @@ function renderSchedule(){
       const isWorking = sh && !sh.isOff && code!=='國';
       const isRest = (sh && sh.isOff) || code==='國';
       let bg='#fff', tc='#ccc';
-      if(sh){ bg=sh.color; tc=isWorking?'#000':'#e74c3c'; }
+      if(sh){
+        if(isWorking){ tc='#000'; }            // 班別：無網底、黑字
+        else { bg=sh.color; tc='#e74c3c'; }    // 休假：保留網底、紅字
+      }
       if(isWorking){ totalH+=calcWorkHours(sh); }
       if(isRest){ restDays++; }
       html+=`<td class="shift-cell" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${code||'　'}</td>`;
