@@ -626,25 +626,11 @@ function calcLaborCost(y,m){
 function renderSummary(y,m,lunchCnt,dinnerCnt){
   const el=document.getElementById('sch-summary');
   if(!el) return;
-  const rev=getRevenue(y,m);
-  const cost=calcLaborCost(y,m);
-  const pct=rev>0?(cost/rev*100):0;
   const total=lunchCnt+dinnerCnt;
   el.innerHTML=`
-    <div class="card" style="margin:12px;display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="color:var(--gray);font-size:13px">預估營業額</span>
-        <span style="font-size:18px;font-weight:700;cursor:pointer" onclick="editRevenue()">$${rev.toLocaleString()} ✎</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:10px">
-        <span style="color:var(--gray);font-size:13px">預估人事成本</span>
-        <span><span style="font-size:18px;font-weight:700">$${cost.toLocaleString()}</span>
-          <span style="font-size:15px;font-weight:700;color:${pct>22?'#e74c3c':'#27ae60'};margin-left:8px">${pct.toFixed(1)}%</span></span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:10px">
-        <span style="color:var(--gray);font-size:13px">外送次數</span>
-        <span style="font-size:14px">午餐 <b style="color:#1d9e75">${lunchCnt}</b> ／ 晚餐 <b style="color:#3a5fcd">${dinnerCnt}</b> ／ 合計 <b style="color:var(--red)">${total}</b> 次</span>
-      </div>
+    <div class="card" style="margin:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:var(--gray);font-size:13px">外送次數</span>
+      <span style="font-size:14px">午餐 <b style="color:#1d9e75">${lunchCnt}</b> ／ 晚餐 <b style="color:#3a5fcd">${dinnerCnt}</b> ／ 合計 <b style="color:var(--red)">${total}</b> 次</span>
     </div>`;
 }
 
@@ -687,14 +673,16 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
     }
   });
   const reqH=calcRequiredHours(y,m);
-  const deliv=getDelivery(y,m);
-  const delivCnt=Object.keys(deliv.lunch||{}).length+Object.keys(deliv.dinner||{}).length;
+  const rev=getRevenue(y,m);
+  const cost=calcLaborCost(y,m);
+  const pct=rev>0?(cost/rev*100):0;
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
+    <div class="stat-chip" style="cursor:pointer" onclick="editRevenue()"><div class="sv">$${(rev/10000).toFixed(0)}萬</div><div class="sl">預估營業額 ✎</div></div>
+    <div class="stat-chip"><div class="sv" style="color:${pct>22?'#e74c3c':'#27ae60'}">${pct.toFixed(1)}%</div><div class="sl">人事成本 $${(cost/10000).toFixed(1)}萬</div></div>
     <div class="stat-chip"><div class="sv">${totalH.toFixed(0)}</div><div class="sl">總時數</div></div>
     <div class="stat-chip"><div class="sv">${totalOT.toFixed(0)}</div><div class="sl">加班時數</div></div>
     <div class="stat-chip"><div class="sv" style="color:#e67e22">${reqH}</div><div class="sl">正職應出勤</div></div>
-    <div class="stat-chip"><div class="sv" style="color:#1d9e75">${delivCnt}</div><div class="sl">外送次數</div></div>
     <div class="stat-chip"><div class="sv">${days}</div><div class="sl">天數</div></div>
   `;
 }
@@ -1180,97 +1168,75 @@ function saveShiftDef(){
 }
 
 // ===== PDF EXPORT =====
+// 以截圖方式輸出（瀏覽器繪製中文，避免 jsPDF 內建字型亂碼），A4 橫式滿版
+async function imageToA4(node, filename){
+  const cont=document.createElement('div');
+  cont.style.cssText='position:absolute;left:-99999px;top:0;background:#fff;padding:16px;display:inline-block';
+  cont.appendChild(node);
+  document.body.appendChild(cont);
+  const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#fff'});
+  document.body.removeChild(cont);
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const pw=297, ph=210, iw=canvas.width, ih=canvas.height;
+  const r=Math.min(pw/iw, ph/ih);          // 維持比例填滿頁面
+  const w=iw*r, h=ih*r;
+  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',(pw-w)/2,(ph-h)/2,w,h);
+  pdf.save(filename);
+}
+
 async function exportPDF(){
   showToast('準備匯出PDF...',3000);
   await new Promise(r=>setTimeout(r,300));
-  const el=document.querySelector('.tbl-wrap');
-  const canvas=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#fff'});
-  const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const y=state.curYear,m=state.curMonth;
-  pdf.setFontSize(14);
-  pdf.text(`麻的小辛辣 ${y}年${m}月 班表`,10,12);
-  const iw=canvas.width,ih=canvas.height;
-  const pw=277,ph=190;
-  const ratio=Math.min(pw/iw,ph/ih);
-  pdf.addImage(canvas.toDataURL('image/png'),10,18,iw*ratio,ih*ratio);
-  pdf.save(`班表_${y}${fmt(m)}.pdf`);
+  const y=state.curYear,m=state.curMonth, store=getStore();
+  const box=document.createElement('div');
+  const title=document.createElement('div');
+  title.style.cssText='font-size:22px;font-weight:900;color:#111;margin-bottom:10px;white-space:nowrap';
+  title.textContent=`麻的🔥小辛辣　${store?store+'　':''}${y}年 ${m}月 班表`;
+  box.appendChild(title);
+  box.appendChild(document.getElementById('sch-table').cloneNode(true));
+  // 摘要（營業額/人事成本/外送）一併附上
+  const sum=document.getElementById('sch-summary');
+  if(sum){ const sc=sum.cloneNode(true); sc.style.cssText='margin-top:10px;max-width:600px'; box.appendChild(sc); }
+  await imageToA4(box, `麻的小辛辣_${y}${fmt(m)}_班表.pdf`);
   showToast('✅ 班表PDF已下載');
 }
 
 async function exportSalaryPDF(){
   showToast('準備匯出薪資PDF...',3000);
   await new Promise(r=>setTimeout(r,300));
-  const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({unit:'mm',format:'a4'});
   const y=state.salYear,m=state.salMonth;
   const emps=getEmployeesForMonth(y,m);
   const settings=getSettings();
-
-  pdf.setFont('helvetica','bold');
-  pdf.setFontSize(16);
-  pdf.text(`${y}年${m}月 薪資明細`, 105, 20, {align:'center'});
-  pdf.setFontSize(11);
-  pdf.text('麻的小辛辣', 105, 28, {align:'center'});
-
-  let yPos=38;
-  let totalGross=0,totalNet=0;
-
-  // Table header
-  pdf.setFillColor(231,76,60);
-  pdf.rect(10,yPos,190,8,'F');
-  pdf.setTextColor(255,255,255);
-  pdf.setFont('helvetica','bold');
-  pdf.setFontSize(9);
-  ['姓名','出勤天數','時數','底薪','加班費','假日費','應發','扣除','實領'].forEach((h,i)=>{
-    const x=[10,45,65,82,102,122,142,162,172];
-    pdf.text(h, x[i]+1, yPos+5.5);
-  });
-  yPos+=8;
-  pdf.setTextColor(0,0,0);
-
+  let totalGross=0,totalNet=0, rows='';
   emps.forEach((emp,idx)=>{
-    const r=calcSalary(emp.id,y,m);
-    if(!r) return;
+    const r=calcSalary(emp.id,y,m); if(!r) return;
     totalGross+=r.grossPay; totalNet+=r.netPay;
-    if(idx%2===0) pdf.setFillColor(249,249,249);
-    else pdf.setFillColor(255,255,255);
-    pdf.rect(10,yPos,190,7,'F');
-    pdf.setFont('helvetica','normal');
-    pdf.setFontSize(9);
-    const row=[
-      r.emp.name,
-      r.workDays+'天',
-      r.totalH.toFixed(1)+'h',
-      '$'+(r.regularPay+r.emp.base).toFixed(0),
-      '$'+r.otPay.toFixed(0),
-      '$'+r.holPay.toFixed(0),
-      '$'+r.grossPay.toLocaleString(),
-      '$'+r.deductions.toLocaleString(),
-      '$'+r.netPay.toLocaleString(),
-    ];
-    const x=[10,45,65,82,102,122,142,162,172];
-    row.forEach((v,i)=>pdf.text(v,x[i]+1,yPos+5));
-    yPos+=7;
-    if(yPos>270){pdf.addPage();yPos=20;}
+    rows+=`<tr style="background:${idx%2?'#fff':'#f9f9f9'}">
+      <td>${r.emp.name}</td><td>${r.workDays}天</td><td>${r.totalH.toFixed(1)}h</td>
+      <td>$${(r.regularPay+r.emp.base).toFixed(0)}</td><td>$${r.otPay.toFixed(0)}</td>
+      <td>$${r.holPay.toFixed(0)}</td><td>$${r.grossPay.toLocaleString()}</td>
+      <td>$${r.deductions.toLocaleString()}</td><td style="font-weight:700">$${r.netPay.toLocaleString()}</td></tr>`;
   });
-
-  // Total row
-  yPos+=3;
-  pdf.setFillColor(255,230,100);
-  pdf.rect(10,yPos,190,8,'F');
-  pdf.setFont('helvetica','bold');
-  pdf.setFontSize(9);
-  pdf.text('合計',11,yPos+5.5);
-  pdf.text('$'+totalGross.toLocaleString(),142,yPos+5.5);
-  pdf.text('$'+totalNet.toLocaleString(),172,yPos+5.5);
-
-  pdf.setFont('helvetica','normal');
-  pdf.setFontSize(8);
-  pdf.setTextColor(150,150,150);
-  pdf.text(`加班計算：正常工時${settings.regularHours}h, 前2h×${settings.ot1}, 超過×${settings.ot2}`, 10, yPos+20);
-
-  pdf.save(`薪資_${y}${fmt(m)}.pdf`);
+  const box=document.createElement('div');
+  box.style.cssText='font-family:-apple-system,sans-serif;color:#111';
+  box.innerHTML=`
+    <div style="font-size:22px;font-weight:900;margin-bottom:4px">麻的🔥小辛辣　${getStore()||''}</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:10px">${y}年 ${m}月 薪資明細</div>
+    <table style="border-collapse:collapse;font-size:13px;white-space:nowrap">
+      <thead><tr style="background:#e74c3c;color:#fff">
+        ${['姓名','出勤天數','時數','底薪','加班費','假日費','應發','扣除','實領'].map(h=>`<th style="padding:6px 12px;border:1px solid #ddd">${h}</th>`).join('')}
+      </tr></thead>
+      <tbody>${rows.replace(/<td>/g,'<td style="padding:5px 12px;border:1px solid #eee;text-align:center">').replace(/<td style="font-weight:700">/g,'<td style="padding:5px 12px;border:1px solid #eee;text-align:center;font-weight:700">')}</tbody>
+      <tfoot><tr style="background:#ffe664;font-weight:700">
+        <td colspan="6" style="padding:6px 12px;border:1px solid #ddd;text-align:right">合計</td>
+        <td style="padding:6px 12px;border:1px solid #ddd;text-align:center">$${totalGross.toLocaleString()}</td>
+        <td style="padding:6px 12px;border:1px solid #ddd"></td>
+        <td style="padding:6px 12px;border:1px solid #ddd;text-align:center">$${totalNet.toLocaleString()}</td>
+      </tr></tfoot>
+    </table>
+    <div style="font-size:11px;color:#888;margin-top:10px">加班計算：正常工時 ${settings.regularHours}h／日，前 2h ×${settings.ot1}，超過 ×${settings.ot2}，國定假日 ×${settings.holRate}</div>`;
+  await imageToA4(box, `麻的小辛辣_${y}${fmt(m)}_薪資.pdf`);
   showToast('✅ 薪資PDF已下載');
 }
 
