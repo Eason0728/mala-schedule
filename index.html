@@ -3,6 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script>
+/* file:// 無法連雲端同步 → 自動導向線上版（帶上同步設定） */
+if(location.protocol==='file:'){
+  var _u='https://eason0728.github.io/mala-schedule/';
+  try{
+    var _c=JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');
+    if(_c&&_c.gistId&&_c.token) _u+='#gist='+_c.gistId+'&token='+encodeURIComponent(_c.token);
+  }catch(e){}
+  location.replace(_u);
+}
+</script>
 <title>麻的🔥小辛辣 排班系統</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
