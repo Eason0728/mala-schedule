@@ -36,8 +36,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hdr{background:var(--red);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
 .hdr h1{font-size:17px;font-weight:700}
 .hdr-btn{background:rgba(255,255,255,0.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;font-size:13px;cursor:pointer}
+/* LOGO BAR */
+.logo-bar{background:#fff;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
 /* MONTH NAV */
-.month-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:40}
+.month-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:59px;z-index:40}
 .month-nav .mnav-btn{background:none;border:1px solid var(--border);width:36px;height:36px;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .month-nav .month-label{font-size:18px;font-weight:700}
 /* SCHEDULE TABLE */
@@ -148,13 +150,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- ===== PAGES ===== -->
 <!-- 班表 -->
 <div id="page-schedule" class="page active">
-  <div class="hdr">
-    <h1>🔥 麻的小辛辣 排班</h1>
-    <button class="hdr-btn" onclick="exportPDF()">📄 匯出</button>
+  <div class="logo-bar">
+    <div style="display:flex;align-items:center;gap:6px">
+      <img id="logo-img" src="logo.png" alt="logo" style="height:42px" onerror="this.style.display='none';document.getElementById('logo-text').style.display='flex'">
+      <div id="logo-text" style="display:none;flex-direction:column;line-height:1.05">
+        <span style="font-size:21px;font-weight:900;color:#111;letter-spacing:1px">麻的🔥小辛辣</span>
+        <span style="font-size:9px;color:#c0392b;letter-spacing:2px;font-weight:600">MADE · SIAO SIN-LA</span>
+      </div>
+    </div>
+    <button class="hdr-btn" style="background:var(--red);color:#fff" onclick="exportPDF()">📄 匯出</button>
   </div>
   <div class="month-nav">
     <button class="mnav-btn" onclick="changeMonth(-1)">‹</button>
-    <span class="month-label" id="month-label"></span>
+    <div style="text-align:center">
+      <div class="month-label" id="month-label"></div>
+      <div id="store-label" style="font-size:12px;color:var(--gray);cursor:pointer;margin-top:2px" onclick="editStore()"></div>
+    </div>
     <button class="mnav-btn" onclick="changeMonth(1)">›</button>
   </div>
   <div class="stat-bar" id="stat-bar"></div>
@@ -201,8 +212,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="section-title" style="padding:8px 0 4px;font-size:11px">國定假日加班</div>
     <div class="form-group"><label>國定假日倍率</label><input type="number" id="set-hol" step="0.01" value="2.00" onchange="saveSetting('holRate',this.value)"></div>
   </div>
-  <div class="section-title">國定假日設定（本月）</div>
-  <div class="card" id="holiday-setting"></div>
   <div class="section-title">☁️ 雲端同步</div>
   <div class="card" id="gist-setting-card">
     <div id="gist-status" style="font-size:13px;margin-bottom:12px;color:var(--gray)">⚫ 未連線</div>
@@ -347,7 +356,7 @@ function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); if(!_supp
 
 function getEmployees(){ return load('mala_employees',[]); }
 function saveEmployees(d){ save('mala_employees',d); }
-function getShifts(){ return {...DEFAULT_SHIFTS,...load('mala_shifts',{})}; }
+function getShifts(){ const m={...DEFAULT_SHIFTS,...load('mala_shifts',{})}; load('mala_hidden_shifts',[]).forEach(c=>delete m[c]); return m; }
 function saveShifts(d){ save('mala_shifts',d); }
 function getSchedule(y,m){ return load(`mala_sch_${y}_${m}`,{}); }
 function saveSchedule(y,m,d){ save(`mala_sch_${y}_${m}`,d); }
@@ -361,6 +370,7 @@ function getDelivery(y,m){ return load(`mala_deliv_${y}_${m}`,{lunch:{},dinner:{
 function saveDelivery(y,m,d){ save(`mala_deliv_${y}_${m}`,d); }
 function getRevenue(y,m){ const v=load(`mala_rev_${y}_${m}`,null); return v!==null?v:((DEFAULT_REVENUE[y]||{})[m]||0); }
 function saveRevenue(y,m,v){ save(`mala_rev_${y}_${m}`,v); }
+function getStore(){ return load('mala_store',''); }
 
 // ===== GITHUB GIST SYNC =====
 function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
@@ -483,6 +493,8 @@ function changeMonth(d){
 function renderSchedule(){
   const y=state.curYear, m=state.curMonth;
   document.getElementById('month-label').textContent=`${y} 年 ${m} 月`;
+  const st=getStore();
+  document.getElementById('store-label').textContent = st?`店別：${st}`:'＋ 設定店別';
   const days=daysInMonth(y,m);
   const emps=getEmployeesForMonth(y,m);
   const sch=getSchedule(y,m);
@@ -502,7 +514,7 @@ function renderSchedule(){
     const cls=isHol||wk===0||wk===6?'day-sun':'';
     html+=`<th class="${cls}">${d}<br><span>${wd(wk)}</span></th>`;
   }
-  html+='<th>休假</th><th>時數</th></tr></thead><tbody>';
+  html+='<th>天數</th><th>時數</th></tr></thead><tbody>';
 
   // 提醒/節日 annotation row
   const notes=getNotes(y,m);
@@ -643,6 +655,13 @@ function editRevenue(){
   if(v===null) return;
   const n=parseInt(String(v).replace(/[^0-9]/g,''))||0;
   saveRevenue(y,m,n);
+  renderSchedule();
+}
+
+function editStore(){
+  const v=prompt('店別名稱（例如：旗艦店、二店）', getStore());
+  if(v===null) return;
+  save('mala_store', v.trim());
   renderSchedule();
 }
 
@@ -1092,39 +1111,34 @@ function renderSettings(){
         <span style="font-size:12px;color:var(--gray)">${sh.time} ｜ ${calcWorkHours(sh)}h</span>
       </span>
       <button class="btn btn-outline btn-sm" onclick="openShiftDef('${code}')">編輯</button>
+      <button class="btn btn-danger btn-sm" style="margin-left:6px" onclick="deleteShift('${code}')">刪除</button>
     </div>`;
   });
   html+=`<button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%" onclick="openShiftDef('')">＋ 新增班別</button>`;
   document.getElementById('shift-defs').innerHTML=html;
 
-  // Holiday setting
-  renderHolidaySetting();
   updateGistStatus();
 }
 
-function renderHolidaySetting(){
-  const y=state.curYear,m=state.curMonth;
-  const days=daysInMonth(y,m);
-  const holidays=getHolidays(y,m);
-  let html=`<div style="font-size:12px;color:var(--gray);margin-bottom:8px">選擇 ${y}年${m}月 的國定假日日期：</div><div style="display:flex;flex-wrap:wrap;gap:8px">`;
-  for(let d=1;d<=days;d++){
-    const wk=weekday(y,m,d);
-    const isHol=holidays.includes(d);
-    html+=`<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
-      <input type="checkbox" ${isHol?'checked':''} onchange="toggleHoliday(${d},this.checked)" style="width:auto">
-      <span style="${wk===0||wk===6?'color:var(--red)':''}">${m}/${d}(${wd(wk)})</span>
-    </label>`;
+function deleteShift(code){
+  // 計算使用中的格數，提醒使用者
+  let used=0;
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k && /^mala_sch_\d+_\d+$/.test(k)){
+      const s=load(k,{});
+      for(const eid in s) for(const d in s[eid]) if(s[eid][d]===code) used++;
+    }
   }
-  html+='</div>';
-  document.getElementById('holiday-setting').innerHTML=html;
-}
-
-function toggleHoliday(day,checked){
-  const y=state.curYear,m=state.curMonth;
-  let hols=getHolidays(y,m);
-  if(checked&&!hols.includes(day)) hols.push(day);
-  if(!checked) hols=hols.filter(d=>d!==day);
-  saveHolidays(y,m,hols);
+  const warn = used>0 ? `\n\n⚠️ 目前有 ${used} 格排班使用此班別，刪除後那些格子會變空白。` : '';
+  if(!confirm(`刪除班別「${code}」？${warn}`)) return;
+  // 從自訂班別移除，並加入隱藏清單（連 DEFAULT 內建班別也能隱藏）
+  const custom=load('mala_shifts',{});
+  if(custom[code]){ delete custom[code]; save('mala_shifts',custom); }
+  const hidden=load('mala_hidden_shifts',[]);
+  if(!hidden.includes(code)){ hidden.push(code); save('mala_hidden_shifts',hidden); }
+  renderSettings(); renderSchedule();
+  showToast(`已刪除班別 ${code}`);
 }
 
 function openShiftDef(code){
@@ -1157,8 +1171,11 @@ function saveShiftDef(){
     isOff:document.getElementById('sd-isoff').checked,
   };
   saveShifts(shifts);
+  // 若該代碼曾被刪除（隱藏），重新建立時取消隱藏
+  const hidden=load('mala_hidden_shifts',[]).filter(c=>c!==newCode);
+  save('mala_hidden_shifts',hidden);
   closeModal('shiftdef-overlay');
-  renderSettings();
+  renderSettings(); renderSchedule();
   showToast('班別已儲存');
 }
 
