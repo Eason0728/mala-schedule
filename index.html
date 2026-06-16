@@ -1213,17 +1213,19 @@ function saveShiftDef(){
 // 以截圖方式輸出（瀏覽器繪製中文，避免 jsPDF 內建字型亂碼），A4 橫式滿版
 async function imageToA4(node, filename){
   const cont=document.createElement('div');
-  cont.style.cssText='position:absolute;left:-99999px;top:0;background:#fff;padding:16px;display:inline-block';
+  cont.style.cssText='position:absolute;left:-99999px;top:0;background:#fff;padding:16px;display:inline-block;text-align:center';
   cont.appendChild(node);
   document.body.appendChild(cont);
-  const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#fff'});
+  // 截圖前把 sticky 欄位改為一般定位，避免 html2canvas 把員工欄推到右邊
+  cont.querySelectorAll('.sticky-col').forEach(el=>{ el.style.position='static'; });
+  const canvas=await html2canvas(cont,{scale:3,backgroundColor:'#fff',useCORS:true}); // 高解析度
   document.body.removeChild(cont);
   const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});
   const pw=297, ph=210, iw=canvas.width, ih=canvas.height;
   const r=Math.min(pw/iw, ph/ih);          // 維持比例填滿頁面
   const w=iw*r, h=ih*r;
-  pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',(pw-w)/2,(ph-h)/2,w,h);
+  pdf.addImage(canvas.toDataURL('image/png'),'PNG',(pw-w)/2,(ph-h)/2,w,h); // PNG 文字清晰
   pdf.save(filename);
 }
 
