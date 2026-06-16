@@ -492,6 +492,7 @@ function renderSchedule(){
 
   emps.forEach(emp=>{
     const empSch=sch[emp.id]||{};
+    const hasAnyShift=Object.keys(empSch).length>0;  // 此人本月是否已開始排班
     let restDays=0, totalH=0;
     const hireStr=emp.hireDate?emp.hireDate.slice(0,7).replace('-','/'):'';
     const entitle=emp.isFullTime?calcLeaveEntitlement(emp.hireDate):0;
@@ -507,8 +508,8 @@ function renderSchedule(){
     </td>`;
     for(let d=1;d<=days;d++){
       let code=empSch[d]||'';
-      // 計時人員空白班別顯示休
-      if(!code && !emp.isFullTime) code='休';
+      // 計時人員：已開始排班後，空白日才視為休（未排班前保持空白）
+      if(!code && !emp.isFullTime && hasAnyShift) code='休';
       const sh=shifts[code];
       const isWorking = sh && !sh.isOff && code!=='國';
       const isRest = (sh && sh.isOff) || code==='國';
