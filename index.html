@@ -427,6 +427,18 @@ function weekday(y,m,d){ return new Date(y,m-1,d).getDay(); } // 0=Sun
 function wd(n){ return ['日','一','二','三','四','五','六'][n]; }
 function fmt(n){ return String(n).padStart(2,'0'); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function monthKey(y,m){ return `${y}-${fmt(m)}`; }
+
+// 某月該顯示哪些員工：在職者永遠顯示；離職者只在「離職月(含)以前且該月有排班」的月份顯示
+function getEmployeesForMonth(y,m){
+  const sch=getSchedule(y,m);
+  const mk=monthKey(y,m);
+  return getEmployees().filter(e=>{
+    if(e.active!==false) return true;                            // 在職
+    if(e.termMonth && mk>e.termMonth) return false;              // 離職之後的月份 → 隱藏
+    const es=sch[e.id]; return es && Object.keys(es).length>0;   // 其餘月份：有排班才保留
+  });
+}
 
 function showToast(msg,ms=2000){
   const t=document.getElementById('toast');
@@ -460,7 +472,7 @@ function renderSchedule(){
   const y=state.curYear, m=state.curMonth;
   document.getElementById('month-label').textContent=`${y} 年 ${m} 月`;
   const days=daysInMonth(y,m);
-  const emps=getEmployees();
+  const emps=getEmployeesForMonth(y,m);
   const sch=getSchedule(y,m);
   const shifts=getShifts();
   const holidays=getHolidays(y,m);
@@ -764,17 +776,19 @@ function applyShift(){
 
 // ===== EMPLOYEE PAGE =====
 function renderEmployees(){
-  const emps=getEmployees();
+  const all=getEmployees();
+  const active=all.filter(e=>e.active!==false);
+  const left=all.filter(e=>e.active===false);
   const el=document.getElementById('emp-list');
-  if(!emps.length){
+  if(!all.length){
     el.innerHTML='<div style="text-align:center;padding:24px;color:var(--gray)">尚無員工，點右下角 ＋ 新增</div>';
     return;
   }
-  el.innerHTML=emps.map(e=>`
+  const card=e=>`
     <div class="emp-item">
       <div class="emp-avatar">${e.name[0]}</div>
       <div class="emp-info">
-        <div class="name">${e.name}</div>
+        <div class="name">${e.name}${e.isFullTime?' <span style="font-size:10px;color:#e67e22">正職</span>':' <span style="font-size:10px;color:#3498db">計時</span>'}</div>
         <div class="sub">${e.phone||'－'} ｜ 時薪 $${e.wage||0}</div>
         <div class="sub">到職：${e.hireDate||'－'}</div>
       </div>
@@ -782,8 +796,21 @@ function renderEmployees(){
         <button class="btn btn-outline btn-sm" onclick="openEmpModal('${e.id}')">編輯</button>
         <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">刪除</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  const leftCard=e=>`
+    <div class="emp-item" style="opacity:.6">
+      <div class="emp-avatar" style="background:#bbb">${e.name[0]}</div>
+      <div class="emp-info">
+        <div class="name">${e.name} <span style="font-size:10px;color:#e74c3c">離職 ${e.termMonth||''}</span></div>
+        <div class="sub">已排班月份仍保留，之後月份隱藏</div>
+      </div>
+      <div class="emp-actions">
+        <button class="btn btn-outline btn-sm" onclick="restoreEmployee('${e.id}')">復職</button>
+        <button class="btn btn-danger btn-sm" onclick="purgeEmployee('${e.id}')">永久刪</button>
+      </div>
+    </div>`;
+  el.innerHTML = active.map(card).join('')
+    + (left.length?`<div class="section-title" style="padding:14px 0 4px">已離職（${left.length}）</div>`+left.map(leftCard).join(''):'');
 }
 
 function openEmpModal(id=''){
@@ -810,6 +837,7 @@ function saveEmployee(){
   const id=document.getElementById('emp-id').value||uid();
   const idx=emps.findIndex(e=>e.id===id);
   const emp={
+    ...(idx>=0?emps[idx]:{}),   // 保留既有欄位（如 active / termMonth）
     id,name,
     hireDate:document.getElementById('emp-hire').value,
     phone:document.getElementById('emp-phone').value.trim(),
@@ -827,11 +855,43 @@ function saveEmployee(){
 }
 
 function deleteEmployee(id){
-  if(!confirm('確定刪除此員工？')) return;
-  const emps=getEmployees().filter(e=>e.id!==id);
+  const emps=getEmployees();
+  const emp=emps.find(e=>e.id===id);
+  if(!emp) return;
+  const term=monthKey(new Date().getFullYear(), new Date().getMonth()+1);
+  if(!confirm(`確定要將「${emp.name}」設為離職？\n\n已排定的班表（含本月）會保留，${term} 之後的月份不再顯示。`)) return;
+  const idx=emps.findIndex(e=>e.id===id);
+  emps[idx]={...emps[idx], active:false, termMonth:term};
   saveEmployees(emps);
   renderEmployees();
-  showToast('已刪除員工');
+  renderSchedule(); renderSalary();
+  showToast('已設為離職（保留歷史班表）');
+}
+
+function restoreEmployee(id){
+  const emps=getEmployees();
+  const idx=emps.findIndex(e=>e.id===id);
+  if(idx<0) return;
+  emps[idx]={...emps[idx], active:true}; delete emps[idx].termMonth;
+  saveEmployees(emps);
+  renderEmployees(); renderSchedule(); renderSalary();
+  showToast('已復職');
+}
+
+function purgeEmployee(id){
+  const emp=getEmployees().find(e=>e.id===id);
+  if(!emp) return;
+  if(!confirm(`永久刪除「${emp.name}」？\n\n會一併移除所有月份的班表記錄，無法復原！`)) return;
+  saveEmployees(getEmployees().filter(e=>e.id!==id));
+  // 清掉所有月份的排班資料
+  for(let i=localStorage.length-1;i>=0;i--){
+    const k=localStorage.key(i);
+    if(k&&/^mala_sch_\d+_\d+$/.test(k)){
+      try{const s=JSON.parse(localStorage.getItem(k)); if(s[id]){delete s[id]; save(k,s);}}catch{}
+    }
+  }
+  renderEmployees(); renderSchedule(); renderSalary();
+  showToast('已永久刪除');
 }
 
 // ===== SALARY PAGE =====
@@ -892,7 +952,7 @@ function calcSalary(empId, y, m){
 function renderSalary(){
   const y=state.salYear, m=state.salMonth;
   document.getElementById('sal-month-label').textContent=`${y} 年 ${m} 月`;
-  const emps=getEmployees();
+  const emps=getEmployeesForMonth(y,m);
   if(!emps.length){
     document.getElementById('salary-content').innerHTML='<div class="card" style="text-align:center;color:var(--gray);padding:24px">尚無員工資料</div>';
     return;
@@ -1045,7 +1105,7 @@ async function exportSalaryPDF(){
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({unit:'mm',format:'a4'});
   const y=state.salYear,m=state.salMonth;
-  const emps=getEmployees();
+  const emps=getEmployeesForMonth(y,m);
   const settings=getSettings();
 
   pdf.setFont('helvetica','bold');
