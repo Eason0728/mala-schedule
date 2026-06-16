@@ -44,17 +44,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .month-nav .month-label{font-size:18px;font-weight:700}
 /* SCHEDULE TABLE */
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.sch-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap}
-.sch-tbl th,.sch-tbl td{border:1px solid #ccc;padding:3px 2px;text-align:center;min-width:26px}
-.sch-tbl .sticky-col{position:sticky;left:0;z-index:5;background:#fff;min-width:100px;max-width:100px;text-align:left;padding:4px 6px;font-weight:600;font-size:12px}
-.emp-cell-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.emp-cell-sub{font-size:9px;color:var(--gray);line-height:1.5;font-weight:400}
-.emp-cell-leave{font-size:9px;color:#27ae60;font-weight:600}
-.emp-cell-req{font-size:9px;color:#e67e22;font-weight:600}
-.sch-tbl .hdr-row th{background:#f0f0f0;font-weight:600;font-size:10px;position:sticky;top:0;z-index:10}
+.sch-tbl{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.sch-tbl th,.sch-tbl td{border:1px solid #ccc;padding:6px 5px;text-align:center;min-width:34px}
+.sch-tbl .sticky-col{position:sticky;left:0;z-index:5;background:#fff;min-width:118px;max-width:118px;text-align:left;padding:8px 10px;font-weight:600;font-size:13px}
+.emp-cell-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emp-cell-sub{font-size:10px;color:var(--gray);line-height:1.7;font-weight:400}
+.emp-cell-leave{font-size:10px;color:#27ae60;font-weight:600;line-height:1.7}
+.emp-cell-req{font-size:10px;color:#e67e22;font-weight:600;line-height:1.7}
+.sch-tbl .hdr-row th{background:#f0f0f0;font-weight:600;font-size:11px;position:sticky;top:0;z-index:10;padding:6px 4px;line-height:1.4}
 .sch-tbl .hdr-row .sticky-col{z-index:15;background:#f0f0f0}
 .day-sat,.day-sun,.day-hol{color:#e74c3c}
-.shift-cell{cursor:pointer;border-radius:2px;font-weight:600;min-width:26px;height:28px;line-height:28px;font-size:11px}
+.shift-cell{cursor:pointer;border-radius:2px;font-weight:600;min-width:34px;height:38px;line-height:38px;font-size:13px}
 .shift-cell:active{opacity:0.7}
 /* 指定休假：紅色斜線 */
 .diag-off{background-image:linear-gradient(to top right,transparent calc(50% - 1px),#e74c3c calc(50% - 1px),#e74c3c calc(50% + 1px),transparent calc(50% + 1px))}
@@ -263,6 +263,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="form-group"><label>保險自負額</label><input type="number" id="emp-ins" placeholder="0" min="0"></div>
       <div class="form-group"><label>宿舍費</label><input type="number" id="emp-dorm" placeholder="0" min="0"></div>
     </div>
+    <div class="section-title" style="padding:4px 0">津貼／獎金（每月固定加給）</div>
+    <div class="form-row">
+      <div class="form-group"><label>加班費率（倍）</label><input type="number" id="emp-otrate" step="0.01" placeholder="預設依勞基法"></div>
+      <div class="form-group"><label>職能津貼</label><input type="number" id="emp-skill" placeholder="0" min="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>全勤獎金</label><input type="number" id="emp-attend" placeholder="0" min="0"></div>
+      <div class="form-group"><label>夜間津貼</label><input type="number" id="emp-night" placeholder="0" min="0"></div>
+    </div>
+    <div class="form-group"><label>店長津貼</label><input type="number" id="emp-mgr" placeholder="0" min="0"></div>
     <div class="form-group">
       <label><input type="checkbox" id="emp-fulltime" style="width:auto;margin-right:6px">正職員工（顯示當月應出勤時數）</label>
     </div>
@@ -357,6 +367,17 @@ function save(key,val){ localStorage.setItem(key,JSON.stringify(val)); if(!_supp
 function getEmployees(){ return load('mala_employees',[]); }
 function saveEmployees(d){ save('mala_employees',d); }
 function getShifts(){ const m={...DEFAULT_SHIFTS,...load('mala_shifts',{})}; load('mala_hidden_shifts',[]).forEach(c=>delete m[c]); return m; }
+// 班別排序：英文字母班別依字母/數字順序，休假類（休特指國）固定排最後
+function sortedShiftEntries(shifts){
+  const isWork=c=>/^[A-Za-z]/.test(c);
+  const restOrder=['休','特','指','國'];
+  const work=Object.entries(shifts).filter(([c])=>isWork(c)).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
+  const rest=Object.entries(shifts).filter(([c])=>!isWork(c)).sort((a,b)=>{
+    const ai=restOrder.indexOf(a[0]), bi=restOrder.indexOf(b[0]);
+    return (ai<0?99:ai)-(bi<0?99:bi);
+  });
+  return [...work,...rest];
+}
 function saveShifts(d){ save('mala_shifts',d); }
 function getSchedule(y,m){ return load(`mala_sch_${y}_${m}`,{}); }
 function saveSchedule(y,m,d){ save(`mala_sch_${y}_${m}`,d); }
@@ -690,7 +711,7 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
 function renderShiftLegend(shifts){
   const el=document.getElementById('shift-legend');
   if(!el) return;
-  el.innerHTML=Object.entries(shifts).filter(([,sh])=>!sh.isOff).map(([code,sh])=>
+  el.innerHTML=sortedShiftEntries(shifts).filter(([,sh])=>!sh.isOff).map(([code,sh])=>
     `<div style="flex:0 0 auto;background:${sh.color};color:${sh.textColor};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap">
       ${code} <span style="font-weight:400;font-size:9px">${sh.time.replace('\n',' ')}</span>
     </div>`
@@ -820,7 +841,7 @@ function openShiftPicker(empId, day){
 
   const shifts=getShifts();
   let html='';
-  Object.entries(shifts).forEach(([code,sh])=>{
+  sortedShiftEntries(shifts).forEach(([code,sh])=>{
     const sel=code===cur?'selected':'';
     html+=`<div class="sp-btn ${sel}" style="background:${sh.color};color:${sh.textColor}" onclick="selectShiftOpt('${code}',this)">${code}</div>`;
   });
@@ -914,6 +935,11 @@ function openEmpModal(id=''){
   document.getElementById('emp-base').value=e.base||'';
   document.getElementById('emp-ins').value=e.insurance||'';
   document.getElementById('emp-dorm').value=e.dormitory||'';
+  document.getElementById('emp-otrate').value=e.otRate||'';
+  document.getElementById('emp-skill').value=e.skillAllow||'';
+  document.getElementById('emp-attend').value=e.attendBonus||'';
+  document.getElementById('emp-night').value=e.nightAllow||'';
+  document.getElementById('emp-mgr').value=e.mgrAllow||'';
   document.getElementById('emp-fulltime').checked=e.isFullTime||false;
   openModal('emp-overlay');
 }
@@ -934,6 +960,11 @@ function saveEmployee(){
     base:parseFloat(document.getElementById('emp-base').value)||0,
     insurance:parseFloat(document.getElementById('emp-ins').value)||0,
     dormitory:parseFloat(document.getElementById('emp-dorm').value)||0,
+    otRate:parseFloat(document.getElementById('emp-otrate').value)||0,
+    skillAllow:parseFloat(document.getElementById('emp-skill').value)||0,
+    attendBonus:parseFloat(document.getElementById('emp-attend').value)||0,
+    nightAllow:parseFloat(document.getElementById('emp-night').value)||0,
+    mgrAllow:parseFloat(document.getElementById('emp-mgr').value)||0,
     isFullTime:document.getElementById('emp-fulltime').checked,
   };
   if(idx>=0) emps[idx]=emp; else emps.push(emp);
@@ -1025,17 +1056,27 @@ function calcSalary(empId, y, m){
       holPay+=h*wage*settings.holRate;
     } else {
       regularPay+=regH*wage;
-      const ot1=Math.min(otH,2)*wage*settings.ot1;
-      const ot2=Math.max(otH-2,0)*wage*settings.ot2;
-      otPay+=ot1+ot2;
+      if(emp.otRate>0){
+        // 個人自訂加班費率（單一倍率）
+        otPay+=otH*wage*emp.otRate;
+      } else {
+        // 依勞基法分段
+        const ot1=Math.min(otH,2)*wage*settings.ot1;
+        const ot2=Math.max(otH-2,0)*wage*settings.ot2;
+        otPay+=ot1+ot2;
+      }
     }
   }
 
-  const grossPay=Math.round(regularPay+otPay+holPay+(emp.base||0));
+  // 津貼／獎金（有上班的月份才計入）
+  const allowances = workDays>0
+    ? (emp.skillAllow||0)+(emp.attendBonus||0)+(emp.nightAllow||0)+(emp.mgrAllow||0)
+    : 0;
+  const grossPay=Math.round(regularPay+otPay+holPay+(emp.base||0)+allowances);
   const deductions=(emp.insurance||0)+(emp.dormitory||0);
   const netPay=grossPay-deductions;
 
-  return {emp,workDays,restDays,totalH,regularPay,otPay,holPay,grossPay,deductions,netPay};
+  return {emp,workDays,restDays,totalH,regularPay,otPay,holPay,allowances,grossPay,deductions,netPay};
 }
 
 function renderSalary(){
@@ -1063,6 +1104,7 @@ function renderSalary(){
           <span class="sal-tag">底薪 $${(r.regularPay+r.emp.base).toFixed(0)}</span>
           ${r.otPay>0?`<span class="sal-tag" style="color:#e67e22">加班 $${r.otPay.toFixed(0)}</span>`:''}
           ${r.holPay>0?`<span class="sal-tag" style="color:#e74c3c">假日 $${r.holPay.toFixed(0)}</span>`:''}
+          ${r.allowances>0?`<span class="sal-tag" style="color:#8e44ad">津貼 $${r.allowances.toFixed(0)}</span>`:''}
         </div>
         <div class="sal-total">實領 $${r.netPay.toLocaleString()}</div>
         ${r.deductions>0?`<div class="sal-deduct">扣除：保險 $${r.emp.insurance||0} ＋ 宿舍 $${r.emp.dormitory||0} = $${r.deductions}</div>`:''}
@@ -1091,7 +1133,7 @@ function renderSettings(){
 
   // Shift defs
   let html='';
-  Object.entries(shifts).forEach(([code,sh])=>{
+  sortedShiftEntries(shifts).forEach(([code,sh])=>{
     html+=`<div class="shift-def-row">
       <span class="shift-badge" style="background:${sh.color};color:${sh.textColor}">${code}</span>
       <span style="flex:1;margin:0 10px">
