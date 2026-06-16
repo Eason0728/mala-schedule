@@ -265,7 +265,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div class="section-title" style="padding:4px 0">津貼／獎金（每月固定加給）</div>
     <div class="form-row">
-      <div class="form-group"><label>加班費率（倍）</label><input type="number" id="emp-otrate" step="0.01" placeholder="預設依勞基法"></div>
+      <div class="form-group"><label>加班費（元/時）</label><input type="number" id="emp-otrate" min="0" placeholder="留空依勞基法"></div>
       <div class="form-group"><label>職能津貼</label><input type="number" id="emp-skill" placeholder="0" min="0"></div>
     </div>
     <div class="form-row">
@@ -646,13 +646,7 @@ function calcLaborCost(y,m){
 
 function renderSummary(y,m,lunchCnt,dinnerCnt){
   const el=document.getElementById('sch-summary');
-  if(!el) return;
-  const total=lunchCnt+dinnerCnt;
-  el.innerHTML=`
-    <div class="card" style="margin:12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="color:var(--gray);font-size:13px">外送次數</span>
-      <span style="font-size:14px">午餐 <b style="color:#1d9e75">${lunchCnt}</b> ／ 晚餐 <b style="color:#3a5fcd">${dinnerCnt}</b> ／ 合計 <b style="color:var(--red)">${total}</b> 次</span>
-    </div>`;
+  if(el) el.innerHTML='';   // 外送次數已移至上方統計列
 }
 
 function editRevenue(){
@@ -697,14 +691,24 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
   const rev=getRevenue(y,m);
   const cost=calcLaborCost(y,m);
   const pct=rev>0?(cost/rev*100):0;
+  // 外送次數（午/晚/合計）
+  const deliv=getDelivery(y,m);
+  const lunch=Object.keys(deliv.lunch||{}).length, dinner=Object.keys(deliv.dinner||{}).length;
+  // 正職人員當月休假天數（休/特/國/指）
+  let ftRest=0;
+  emps.filter(e=>e.isFullTime).forEach(e=>{
+    const es=sch[e.id]||{};
+    for(let d=1;d<=days;d++){ const c=es[d]||''; const s=shifts[c]; if((s&&s.isOff)||c==='國') ftRest++; }
+  });
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
     <div class="stat-chip" style="cursor:pointer" onclick="editRevenue()"><div class="sv">$${(rev/10000).toFixed(0)}萬</div><div class="sl">預估營業額 ✎</div></div>
     <div class="stat-chip"><div class="sv" style="color:${pct>22?'#e74c3c':'#27ae60'}">${pct.toFixed(1)}%</div><div class="sl">人事成本 $${(cost/10000).toFixed(1)}萬</div></div>
+    <div class="stat-chip"><div class="sv" style="color:#1d9e75">${lunch+dinner}</div><div class="sl">外送 午${lunch}晚${dinner}</div></div>
     <div class="stat-chip"><div class="sv">${totalH.toFixed(0)}</div><div class="sl">總時數</div></div>
     <div class="stat-chip"><div class="sv">${totalOT.toFixed(0)}</div><div class="sl">加班時數</div></div>
     <div class="stat-chip"><div class="sv" style="color:#e67e22">${reqH}</div><div class="sl">正職應出勤</div></div>
-    <div class="stat-chip"><div class="sv">${days}</div><div class="sl">天數</div></div>
+    <div class="stat-chip"><div class="sv" style="color:#e74c3c">${ftRest}</div><div class="sl">正職休假天數</div></div>
   `;
 }
 
@@ -1057,10 +1061,10 @@ function calcSalary(empId, y, m){
     } else {
       regularPay+=regH*wage;
       if(emp.otRate>0){
-        // 個人自訂加班費率（單一倍率）
-        otPay+=otH*wage*emp.otRate;
+        // 個人自訂加班費（固定金額，元/時）
+        otPay+=otH*emp.otRate;
       } else {
-        // 依勞基法分段
+        // 依勞基法分段倍率
         const ot1=Math.min(otH,2)*wage*settings.ot1;
         const ot2=Math.max(otH-2,0)*wage*settings.ot2;
         otPay+=ot1+ot2;
@@ -1239,9 +1243,13 @@ async function exportPDF(){
   title.textContent=`麻的🔥小辛辣　${store?store+'　':''}${y}年 ${m}月 班表`;
   box.appendChild(title);
   box.appendChild(document.getElementById('sch-table').cloneNode(true));
-  // 摘要（營業額/人事成本/外送）一併附上
-  const sum=document.getElementById('sch-summary');
-  if(sum){ const sc=sum.cloneNode(true); sc.style.cssText='margin-top:10px;max-width:600px'; box.appendChild(sc); }
+  // 摘要列（營業額／人事成本／外送）— 自行組裝，確保 PDF 也有
+  const rev=getRevenue(y,m), cost=calcLaborCost(y,m), pct=rev>0?(cost/rev*100):0;
+  const deliv=getDelivery(y,m), lunch=Object.keys(deliv.lunch||{}).length, dinner=Object.keys(deliv.dinner||{}).length;
+  const foot=document.createElement('div');
+  foot.style.cssText='margin-top:12px;font-size:14px;color:#333';
+  foot.innerHTML=`預估營業額 $${rev.toLocaleString()}　｜　預估人事成本 $${cost.toLocaleString()}（${pct.toFixed(1)}%）　｜　外送次數 午餐 ${lunch}／晚餐 ${dinner}／合計 ${lunch+dinner} 次`;
+  box.appendChild(foot);
   await imageToA4(box, `麻的小辛辣_${y}${fmt(m)}_班表.pdf`);
   showToast('✅ 班表PDF已下載');
 }
