@@ -502,6 +502,24 @@ function renderSchedule(){
   }
   html+='<td></td><td></td></tr>';
 
+  // 外送 rows（緊接在提醒列下方）
+  const deliv=getDelivery(y,m);
+  let lunchCnt=0, dinnerCnt=0;
+  html+='<tr class="deliv-lunch"><td class="sticky-col">午餐外送</td>';
+  for(let d=1;d<=days;d++){
+    const v=deliv.lunch?.[d]||'';
+    if(v) lunchCnt++;
+    html+=`<td class="deliv-cell" onclick="editDelivery('lunch',${d})">${v||'　'}</td>`;
+  }
+  html+=`<td style="font-weight:700;color:#1d9e75">${lunchCnt}</td><td></td></tr>`;
+  html+='<tr class="deliv-dinner"><td class="sticky-col">晚餐外送</td>';
+  for(let d=1;d<=days;d++){
+    const v=deliv.dinner?.[d]||'';
+    if(v) dinnerCnt++;
+    html+=`<td class="deliv-cell" onclick="editDelivery('dinner',${d})">${v||'　'}</td>`;
+  }
+  html+=`<td style="font-weight:700;color:#3a5fcd">${dinnerCnt}</td><td></td></tr>`;
+
   emps.forEach(emp=>{
     const empSch=sch[emp.id]||{};
     const hasAnyShift=Object.keys(empSch).length>0;  // 此人本月是否已開始排班
@@ -551,24 +569,6 @@ function renderSchedule(){
     html+=`<td style="background:#fff9e6;font-weight:600">${cnt||''}</td>`;
   }
   html+=`<td style="background:#fff9e6;font-weight:600">${(totalCount/days).toFixed(1)}</td><td></td></tr>`;
-
-  // 外送 rows
-  const deliv=getDelivery(y,m);
-  let lunchCnt=0, dinnerCnt=0;
-  html+='<tr class="deliv-lunch"><td class="sticky-col">午餐外送</td>';
-  for(let d=1;d<=days;d++){
-    const v=deliv.lunch?.[d]||'';
-    if(v) lunchCnt++;
-    html+=`<td class="deliv-cell" onclick="editDelivery('lunch',${d})">${v||'　'}</td>`;
-  }
-  html+=`<td style="font-weight:700;color:#1d9e75">${lunchCnt}</td><td></td></tr>`;
-  html+='<tr class="deliv-dinner"><td class="sticky-col">晚餐外送</td>';
-  for(let d=1;d<=days;d++){
-    const v=deliv.dinner?.[d]||'';
-    if(v) dinnerCnt++;
-    html+=`<td class="deliv-cell" onclick="editDelivery('dinner',${d})">${v||'　'}</td>`;
-  }
-  html+=`<td style="font-weight:700;color:#3a5fcd">${dinnerCnt}</td><td></td></tr>`;
 
   html+='</tbody>';
   tbl.innerHTML=html;
@@ -642,16 +642,26 @@ function solarToLunar(y,m,d){
 }
 
 // ===== DAY ANNOTATIONS (節日/做牙/盤點) =====
+// 2026（民國115年）國定假日含補假 — 來源：行政院人事行政總處 115年辦公日曆表
 const TW_HOLIDAY_NAMES={
-  1:{1:'元旦'}, 2:{28:'和平紀念日'}, 4:{4:'兒童節',5:'清明節'},
-  5:{1:'勞動節'}, 10:{10:'國慶日'},
+  2026:{
+    1:{1:'元旦'},
+    2:{16:'除夕',17:'春節',18:'春節',19:'春節',20:'春節彈性放假',27:'和平紀念日補假',28:'和平紀念日'},
+    4:{3:'兒童節補假',4:'兒童節',5:'清明節',6:'清明節補假'},
+    5:{1:'勞動節'},
+    6:{19:'端午節'},
+    9:{25:'中秋節',28:'教師節'},
+    10:{9:'國慶日補假',10:'國慶日',25:'臺灣光復節',26:'光復節補假'},
+    12:{25:'行憲紀念日'},
+  }
 };
+function holidayName(y,m,d){ return ((TW_HOLIDAY_NAMES[y]||{})[m]||{})[d]||''; }
 function dayAnnotation(y,m,d,holidays,notes){
   if(notes[d]) return notes[d];                 // 自訂備註優先
-  if(d===daysInMonth(y,m)) return '月底盤點';     // 每月最後一天
-  const hn=(TW_HOLIDAY_NAMES[m]||{})[d];         // 國定假日名稱
+  const hn=holidayName(y,m,d);                   // 國定假日名稱
   if(hn) return hn;
-  if(holidays.includes(d)) return '休';
+  if(holidays.includes(d)) return '休';          // 其他放假日（無名稱）
+  if(d===daysInMonth(y,m)) return '月底盤點';     // 每月最後一天
   const L=solarToLunar(y,m,d);                   // 農曆做牙
   if(L.ld===2) return '初二';
   if(L.ld===16) return '十六';
@@ -660,7 +670,7 @@ function dayAnnotation(y,m,d,holidays,notes){
 function editNote(d){
   const y=state.curYear,m=state.curMonth;
   const notes=getNotes(y,m);
-  const auto=(d===daysInMonth(y,m))?'月底盤點':((TW_HOLIDAY_NAMES[m]||{})[d]||'');
+  const auto=holidayName(y,m,d)||((d===daysInMonth(y,m))?'月底盤點':'');
   const cur=notes[d]||'';
   const v=prompt(`${m}/${d} 備註（如：換油、盤點。留空清除）`, cur||auto);
   if(v===null) return;
@@ -1237,37 +1247,40 @@ function loadDemoData(){
   saveEmployees(emps);
 }
 
-// ===== TAIWAN 2026 OFFICIAL HOLIDAYS =====
-// Source: 行政院人事行政總處 2026年政府行事曆
-const TW_HOLIDAYS = {
-  2026: {
-    1:  [1],                        // 元旦
-    2:  [16,17,18,19,20,27,28],    // 除夕+春節, 和平紀念日+補假
-    3:  [2],                        // 和平紀念日補假
-    4:  [3,4,6],                   // 兒童節+清明節+補假
-    5:  [1],                        // 勞動節
-    6:  [19,22],                   // 端午節+補假
-    9:  [19,21],                   // 中秋節+補假
-    10: [9,10],                    // 國慶日+補假
+// ===== TAIWAN OFFICIAL HOLIDAYS =====
+// 放假日陣列由 TW_HOLIDAY_NAMES 自動產生（單一來源，避免名稱與日期不一致）
+const TW_HOLIDAYS = {};
+for(const yy in TW_HOLIDAY_NAMES){
+  TW_HOLIDAYS[yy]={};
+  for(const mm in TW_HOLIDAY_NAMES[yy]){
+    TW_HOLIDAYS[yy][mm]=Object.keys(TW_HOLIDAY_NAMES[yy][mm]).map(Number);
   }
-};
-
-function autoLoadTWHolidays(y, m){
-  const hols = getHolidays(y, m);
-  if(hols.length) return; // already set
-  const preset = (TW_HOLIDAYS[y]||{})[m]||[];
-  // write directly (no cloud push) — defaults shouldn't overwrite the cloud
-  if(preset.length) localStorage.setItem(`mala_hol_${y}_${m}`, JSON.stringify(preset));
 }
+
+// 行事曆版本：修正後 bump 此值，會強制各裝置以官方行事曆重新覆蓋本機放假日
+const HOLIDAY_VERSION='2026.2';
 
 function seedHolidays(){
   _suppressPush=true;
-  const now=new Date();
-  for(let i=0;i<12;i++){
-    let mm=now.getMonth()+1+i, yy=now.getFullYear();
-    if(mm>12){mm-=12;yy++;}
-    autoLoadTWHolidays(yy,mm);
+  const force = localStorage.getItem('mala_hol_ver')!==HOLIDAY_VERSION;
+  if(force){
+    // 清除舊版自動帶入的放假日，避免失效補假殘留（如舊版 6/22、3/2）
+    const del=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && /^mala_hol_\d+_\d+$/.test(k)) del.push(k);
+    }
+    del.forEach(k=>localStorage.removeItem(k));
   }
+  for(const yy in TW_HOLIDAYS){
+    for(const mm in TW_HOLIDAYS[yy]){
+      const key=`mala_hol_${yy}_${mm}`;
+      if(force || !load(key,[]).length){
+        localStorage.setItem(key, JSON.stringify(TW_HOLIDAYS[yy][mm]));
+      }
+    }
+  }
+  localStorage.setItem('mala_hol_ver', HOLIDAY_VERSION);
   _suppressPush=false;
 }
 
