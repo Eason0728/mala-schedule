@@ -1045,6 +1045,8 @@ function calcSalary(empId, y, m){
   const days=daysInMonth(y,m);
 
   let workDays=0, restDays=0, totalH=0, regularPay=0, otPay=0, holPay=0;
+  let ftRegHours=0, ftHolHours=0;   // 正職用：平日/假日工時累計
+  const wage=emp.wage||0;
 
   for(let d=1;d<=days;d++){
     const code=empSch[d]||'';
@@ -1052,29 +1054,27 @@ function calcSalary(empId, y, m){
     if(!sh) continue;
     if(sh.isOff){ restDays++; continue; }
 
-    const wk=weekday(y,m,d);
     const isHol=holidays.includes(d);
     const h=calcWorkHours(sh);
     workDays++;
     totalH+=h;
 
-    const wage=emp.wage||0;
-    const regH=Math.min(h,settings.regularHours);
-    const otH=Math.max(h-settings.regularHours,0);
-
-    if(isHol){
-      // 國定假日：全部以假日倍率計算
-      holPay+=h*wage*settings.holRate;
+    if(emp.isFullTime){
+      // 月薪制：先累計工時，迴圈後一次計算
+      if(isHol) ftHolHours+=h; else ftRegHours+=h;
     } else {
-      regularPay+=regH*wage;
-      if(emp.otRate>0){
-        // 個人自訂加班費（固定金額，元/時）
-        otPay+=otH*emp.otRate;
+      // 計時制：逐日計算
+      const regH=Math.min(h,settings.regularHours);
+      const otH=Math.max(h-settings.regularHours,0);
+      if(isHol){
+        holPay+=h*wage*settings.holRate;
       } else {
-        // 依勞基法分段倍率
-        const ot1=Math.min(otH,2)*wage*settings.ot1;
-        const ot2=Math.max(otH-2,0)*wage*settings.ot2;
-        otPay+=ot1+ot2;
+        regularPay+=regH*wage;
+        if(emp.otRate>0){
+          otPay+=otH*emp.otRate;                         // 自訂加班費（元/時）
+        } else {
+          otPay+=Math.min(otH,2)*wage*settings.ot1 + Math.max(otH-2,0)*wage*settings.ot2;
+        }
       }
     }
   }
@@ -1083,7 +1083,20 @@ function calcSalary(empId, y, m){
   const allowances = workDays>0
     ? (emp.skillAllow||0)+(emp.attendBonus||0)+(emp.nightAllow||0)+(emp.mgrAllow||0)
     : 0;
-  const grossPay=Math.round(regularPay+otPay+holPay+(emp.base||0)+allowances);
+
+  if(emp.isFullTime){
+    // 月薪制：底薪固定；加班＝當月平日工時超過應出勤；假日另計
+    const reqH=calcRequiredHours(y,m);
+    const hourlyEquiv = emp.base>0 ? emp.base/reqH : wage;          // 月薪換算時薪
+    const otH=Math.max(ftRegHours-reqH,0);
+    const otHourly = emp.otRate>0 ? emp.otRate : hourlyEquiv*settings.ot1;
+    regularPay = workDays>0 ? (emp.base||0) : 0;                    // 月薪底薪
+    otPay = otH*otHourly;
+    holPay = ftHolHours*hourlyEquiv*settings.holRate;
+  } else {
+    regularPay += (workDays>0?(emp.base||0):0);                     // 計時：時薪薪資＋底薪
+  }
+  const grossPay=Math.round(regularPay+otPay+holPay+allowances);
   const deductions=(emp.insurance||0)+(emp.dormitory||0);
   const netPay=grossPay-deductions;
 
@@ -1151,7 +1164,7 @@ function renderSalary(){
         <div class="sal-tags">
           <span class="sal-tag">出勤 ${r.workDays} 天</span>
           <span class="sal-tag">時數 ${r.totalH.toFixed(1)}h</span>
-          <span class="sal-tag">底薪 $${(r.regularPay+r.emp.base).toFixed(0)}</span>
+          <span class="sal-tag">${r.emp.isFullTime?'月薪':'底薪'} $${r.regularPay.toFixed(0)}</span>
           ${r.otPay>0?`<span class="sal-tag" style="color:#e67e22">加班 $${r.otPay.toFixed(0)}</span>`:''}
           ${r.holPay>0?`<span class="sal-tag" style="color:#e74c3c">假日 $${r.holPay.toFixed(0)}</span>`:''}
           ${r.allowances>0?`<span class="sal-tag" style="color:#8e44ad">津貼 $${r.allowances.toFixed(0)}</span>`:''}
@@ -1331,7 +1344,7 @@ async function exportSalaryPDF(){
     totalGross+=r.grossPay; totalNet+=r.netPay;
     rows+=`<tr style="background:${idx%2?'#fff':'#f9f9f9'}">
       <td>${r.emp.name}</td><td>${r.workDays}天</td><td>${r.totalH.toFixed(1)}h</td>
-      <td>$${(r.regularPay+r.emp.base).toFixed(0)}</td><td>$${r.otPay.toFixed(0)}</td>
+      <td>$${r.regularPay.toFixed(0)}</td><td>$${r.otPay.toFixed(0)}</td>
       <td>$${r.holPay.toFixed(0)}</td><td>$${r.grossPay.toLocaleString()}</td>
       <td>$${r.deductions.toLocaleString()}</td><td style="font-weight:700">$${r.netPay.toLocaleString()}</td></tr>`;
   });
