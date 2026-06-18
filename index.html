@@ -1702,8 +1702,21 @@ function autoGenAlgo(y,m,inputData){
     return !(empR.weekdayShift&&empR.offWeekends)&&!empR.designatedWorkMode;
   });
 
+  // 計算正職員工月休假預算（指+休+國 = 紅字天數）
+  const redDays=countRedDays(y,m);
+  const restBudget={}, 休used={};
+  activeEmps.forEach(emp=>{
+    休used[emp.id]=0;
+    if(!emp.isFullTime) return;
+    const empR2=(rules.empRules||{})[emp.id]||{};
+    if(empR2.monthlyRestLimit!=null) return;
+    const 指cnt=(inputData.cannotWork[emp.id]||[]).length;
+    const 国cnt=holidays.filter(d=>!(inputData.cannotWork[emp.id]||[]).includes(d)).length;
+    restBudget[emp.id]=Math.max(0,redDays-指cnt-国cnt);
+  });
+
   // ── 步驟2：每週確保每人有 2 天休假，優先休「人力最充裕」的日子 ──
-  weeks.forEach(week=>{
+  weeks.forEach((week,weekIdx)=>{
     // 計算各日「需求人數」（只算一般員工）
     const demand={};
     week.forEach(d=>{
@@ -1737,7 +1750,13 @@ function autoGenAlgo(y,m,inputData){
       // monthlyRestLimit: rest days pre-assigned in Step 1; just count working days
       if(empMR.monthlyRestLimit!=null){ avail.forEach(d=>committed[d]++); return; }
 
-      const need=Math.max(0,2-existRest);
+      let need=Math.max(0,2-existRest);
+      // 正職：限制每月 (指+休+國) = 紅字天數，將剩餘預算平均分配到剩餘週數
+      if(emp.isFullTime&&restBudget[emp.id]!=null){
+        const remaining=restBudget[emp.id]-休used[emp.id];
+        const remWeeks=weeks.length-weekIdx;
+        need=Math.min(need,Math.max(0,Math.ceil(remaining/remWeeks)));
+      }
       if(need===0){ avail.forEach(d=>committed[d]++); return; }
 
       // 選「surplus最大」的日子休假（surplus=committed - demand，越高越可以少一人）
@@ -1746,8 +1765,10 @@ function autoGenAlgo(y,m,inputData){
       const restSet=new Set(bySurplus.slice(0,need).map(d=>d));
 
       avail.forEach(d=>{
-        if(restSet.has(d)) sch[emp.id][d]='休';
-        else committed[d]++;
+        if(restSet.has(d)){
+          sch[emp.id][d]='休';
+          if(emp.isFullTime&&restBudget[emp.id]!=null) 休used[emp.id]++;
+        } else committed[d]++;
       });
     });
   });
