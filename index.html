@@ -459,7 +459,8 @@ function getStore(){ return load('mala_store',''); }
 const DEFAULT_GIST_ID='1f7ecf0be418990e24d7b2351572e4aa';
 function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
 function saveGistCfg(cfg){ localStorage.setItem('mala_gist_cfg', JSON.stringify(cfg)); }
-function getGistId(){ const c=getGistCfg(); return (c&&c.gistId)||DEFAULT_GIST_ID; }
+// 資料位置固定用內建 Gist，所有裝置（含曾連過舊 Gist 的）都匯流到同一份資料；cfg 只負責提供寫入用的 token
+function getGistId(){ return DEFAULT_GIST_ID; }
 function getGistToken(){ const c=getGistCfg(); return (c&&c.token)||''; }
 
 // Collect all mala_ keys into one JSON snapshot
