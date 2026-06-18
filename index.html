@@ -228,36 +228,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="card" id="gist-setting-card">
     <div id="gist-status" style="font-size:13px;margin-bottom:12px;color:var(--gray)">⚫ 未連線</div>
 
-    <!-- 已連線：同步按鈕 + QR code -->
-    <div id="gist-connected-ui" style="display:none">
+    <!-- 共用：立即同步（讀取免 token） -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步（讀取最新）</button>
+    </div>
+
+    <!-- 可編輯（已設定 token）：上傳 / 解除 / QR -->
+    <div id="gist-editor-ui" style="display:none">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步</button>
-        <button class="btn btn-ghost" onclick="pushToGist(true)">⬆ 上傳</button>
-        <button class="btn btn-danger btn-sm" onclick="disconnectGist()">斷線</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="pushToGist(true)">⬆ 上傳此裝置資料</button>
+        <button class="btn btn-danger btn-sm" onclick="disconnectGist()">解除編輯權限</button>
       </div>
       <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);line-height:1.8">
-        掃描下方 QR code 在其他裝置上設定同步
+        其他裝置打開連結即可<b>自動讀取</b>同一份資料，免設定。<br>
+        若要讓<b>另一台裝置也能編輯</b>，用它掃描下方 QR code。
       </div>
       <div id="gist-qr" style="text-align:center;margin-top:10px"></div>
     </div>
 
-    <!-- 未連線：初次設定表單 -->
+    <!-- 唯讀（未設定 token）：輸入 token 取得編輯權限 -->
     <div id="gist-setup-ui">
       <div style="font-size:12px;color:var(--gray);line-height:1.8;margin-bottom:10px">
-        <b>初次設定步驟：</b><br>
-        1. 前往 <b>gist.github.com</b>，建立一個新的 Gist（任意內容），複製網址中的 ID（英數字串）<br>
-        2. 前往 <b>github.com/settings/tokens</b>，產生新 Token，勾選 <b>gist</b> 權限<br>
-        3. 填入下方並按「連線」
-      </div>
-      <div class="form-group" style="margin-bottom:8px">
-        <label style="font-size:12px">Gist ID</label>
-        <input id="input-gist-id" type="text" placeholder="e.g. 636d3670f265c5d21055..." style="font-size:13px">
+        此裝置目前為<b>唯讀模式</b>，會自動讀取雲端最新資料。<br>
+        要在此裝置<b>編輯並上傳</b>，請貼上 GitHub Token（只需一次）：<br>
+        <span style="font-size:11px">取得方式：github.com/settings/tokens → Generate new token (classic) → 勾選 <b>gist</b></span>
       </div>
       <div class="form-group" style="margin-bottom:12px">
         <label style="font-size:12px">GitHub Token</label>
         <input id="input-gist-token" type="password" placeholder="ghp_xxxxxxxxxxxx" style="font-size:13px">
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick="connectGist()">🔗 連線</button>
+      <button class="btn btn-primary" style="width:100%" onclick="connectGist()">🔓 啟用編輯</button>
     </div>
   </div>
 
@@ -455,8 +455,12 @@ function saveRevenue(y,m,v){ save(`mala_rev_${y}_${m}`,v); }
 function getStore(){ return load('mala_store',''); }
 
 // ===== GITHUB GIST SYNC =====
+// 雲端資料 Gist：讀取免 token（任何裝置打開即自動同步）；寫入才需 token（只存在本機 localStorage，不進公開原始碼）
+const DEFAULT_GIST_ID='1f7ecf0be418990e24d7b2351572e4aa';
 function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
 function saveGistCfg(cfg){ localStorage.setItem('mala_gist_cfg', JSON.stringify(cfg)); }
+function getGistId(){ const c=getGistCfg(); return (c&&c.gistId)||DEFAULT_GIST_ID; }
+function getGistToken(){ const c=getGistCfg(); return (c&&c.token)||''; }
 
 // Collect all mala_ keys into one JSON snapshot
 function buildSnapshot(){
@@ -470,23 +474,21 @@ function buildSnapshot(){
   return snap;
 }
 
-// Debounced push (wait 2s after last change)
+// Debounced push (wait 2s after last change) — 僅在此裝置有 token（可編輯）時才上傳
 let _pushTimer=null;
 function scheduleGistPush(){
-  const cfg=getGistCfg();
-  if(!cfg) return;
+  if(!getGistToken()) return;  // 唯讀裝置不上傳
   clearTimeout(_pushTimer);
   _pushTimer=setTimeout(()=>{ _pushTimer=null; pushToGist(false); }, 2000);
 }
 
 async function pushToGist(showMsg=true){
-  const cfg=getGistCfg();
-  if(!cfg) return;
+  const token=getGistToken();
+  if(!token){ if(showMsg) showToast('此裝置為唯讀，請先啟用編輯'); return; }
   try{
-    const body=JSON.stringify({"mala-schedule.json":{content:JSON.stringify(buildSnapshot(),null,2)}});
-    const r=await fetch(`https://api.github.com/gists/${cfg.gistId}`,{
+    const r=await fetch(`https://api.github.com/gists/${getGistId()}`,{
       method:'PATCH',
-      headers:{'Authorization':'Bearer '+cfg.token,'Content-Type':'application/json'},
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({files:{"mala-schedule.json":{content:JSON.stringify(buildSnapshot(),null,2)}}})
     });
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -495,16 +497,16 @@ async function pushToGist(showMsg=true){
 }
 
 async function pullFromGist(silent){
-  const cfg=getGistCfg();
-  if(!cfg){ if(!silent) showToast('請先設定 Gist 同步'); return; }
+  const gistId=getGistId();
   // Never clobber unsaved local edits: if a push is pending, skip this pull
   if(_pushTimer){ return; }
   if(!silent) showToast('同步中...', 2000);
   try{
-    const r=await fetch(`https://api.github.com/gists/${cfg.gistId}`,{
-      headers:{'Authorization':'Bearer '+cfg.token},
-      cache:'no-store'
-    });
+    // 讀取免 token；若本機有 token 則帶上以提高 API 額度
+    const token=getGistToken();
+    const headers={};
+    if(token) headers['Authorization']='Bearer '+token;
+    const r=await fetch(`https://api.github.com/gists/${gistId}`,{ headers, cache:'no-store' });
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const content=data.files?.['mala-schedule.json']?.content;
@@ -1528,54 +1530,55 @@ async function exportSalaryPDF(){
 }
 
 function disconnectGist(){
+  // 移除 token → 退回唯讀模式（仍自動讀取雲端，只是不能上傳）
   localStorage.removeItem('mala_gist_cfg');
   updateGistStatus();
-  showToast('已斷線，改用本機儲存');
+  showToast('已解除編輯權限，改為唯讀模式');
 }
 
 function updateGistStatus(){
   const el=document.getElementById('gist-status');
   if(!el) return;
-  const cfg=getGistCfg();
-  const connectedUI=document.getElementById('gist-connected-ui');
+  const canEdit=!!getGistToken();
+  const editorUI=document.getElementById('gist-editor-ui');
   const setupUI=document.getElementById('gist-setup-ui');
-  if(cfg){
-    el.innerHTML='🟢 已連線（每 30 秒自動同步）';
+  if(canEdit){
+    el.innerHTML='🟢 已連線雲端（可編輯，每 30 秒自動同步）';
     el.style.color='var(--green)';
-    if(connectedUI) connectedUI.style.display='block';
+    if(editorUI) editorUI.style.display='block';
     if(setupUI) setupUI.style.display='none';
     const qrDiv=document.getElementById('gist-qr');
     if(qrDiv){
-      const setupUrl=`https://eason0728.github.io/mala-schedule/#gist=${cfg.gistId}&token=${cfg.token}`;
+      const setupUrl=`https://eason0728.github.io/mala-schedule/#gist=${getGistId()}&token=${getGistToken()}`;
       qrDiv.innerHTML=`
         <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setupUrl)}"
              style="border-radius:8px;border:1px solid var(--border)" alt="QR">
-        <div style="font-size:11px;color:var(--gray);margin-top:6px">用手機掃描，自動設定雲端同步</div>`;
+        <div style="font-size:11px;color:var(--gray);margin-top:6px">用另一裝置掃描 → 取得編輯權限</div>`;
     }
   } else {
-    el.innerHTML='⚫ 未連線';
-    el.style.color='var(--gray)';
-    if(connectedUI) connectedUI.style.display='none';
+    el.innerHTML='🟢 已連線雲端（唯讀，自動讀取最新）';
+    el.style.color='var(--green)';
+    if(editorUI) editorUI.style.display='none';
     if(setupUI) setupUI.style.display='block';
   }
 }
 
 async function connectGist(){
-  const gistId=(document.getElementById('input-gist-id')?.value||'').trim();
   const token=(document.getElementById('input-gist-token')?.value||'').trim();
-  if(!gistId||!token){ showToast('請填入 Gist ID 和 Token'); return; }
+  if(!token){ showToast('請貼上 GitHub Token'); return; }
   showToast('驗證中…', 2000);
   try{
+    const gistId=getGistId();
     const r=await fetch(`https://api.github.com/gists/${gistId}`,{
       headers:{'Authorization':'Bearer '+token}
     });
-    if(!r.ok) throw new Error(`HTTP ${r.status}，請確認 ID 和 Token 是否正確`);
+    if(!r.ok) throw new Error(`HTTP ${r.status}，請確認 Token 是否有 gist 權限`);
     saveGistCfg({gistId,token});
     updateGistStatus();
-    showToast('✅ 連線成功');
+    showToast('✅ 已啟用編輯，正在上傳此裝置資料…');
     await pushToGist(false);
-    startGistPolling();
-  }catch(e){ showToast('⚠️ 連線失敗：'+e.message); }
+    showToast('✅ 已上傳到雲端');
+  }catch(e){ showToast('⚠️ 啟用失敗：'+e.message); }
 }
 
 function clearAllData(){
@@ -2107,26 +2110,23 @@ function migrateShiftCodes(){
   _suppressPush=false;
 }
 
-// ===== INIT (cloud-first, never clobbers the cloud with demo/empty data) =====
+// ===== INIT (cloud-first：任何裝置都自動讀取雲端，免設定) =====
 (async function init(){
-  // 1) capture setup config from URL hash: #gist=ID&token=TOKEN
+  // 1) 從網址 hash 取得編輯權限：#gist=ID&token=TOKEN（給「啟用編輯」的裝置用）
   const hash=location.hash.slice(1);
-  if(hash.includes('gist=')){
+  if(hash.includes('token=')){
     const p=new URLSearchParams(hash);
-    const gistId=p.get('gist'), token=p.get('token');
-    if(gistId&&token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
+    const gistId=p.get('gist')||getGistId(), token=p.get('token');
+    if(token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
   }
-  const cfg=getGistCfg();
-  // 2) if connected, pull the cloud copy FIRST and start polling
-  if(cfg){
-    await pullFromGist(false);
-    // After pull, push local-only data (e.g. fixedcost set before Gist was connected)
-    scheduleGistPush();
-    startGistPolling();
-  }
-  // 3) only seed demo data for a brand-new standalone user (no cloud, no data)
-  if(!cfg && !getEmployees().length){ loadDemoData(); }
-  // 4) fill in default holidays for months the cloud didn't define (no push)
+  // 2) 一律從雲端 Gist 讀取（讀取免 token），並啟動輪詢
+  await pullFromGist(false);
+  // 若此裝置可編輯，補推本機獨有的資料（例如連雲端前設定的固定成本）
+  scheduleGistPush();
+  startGistPolling();
+  // 3) 僅在「雲端尚未有資料、本機也沒資料、且無編輯權限」時載入示範資料（避免覆蓋雲端）
+  if(!getGistToken() && !getEmployees().length){ loadDemoData(); }
+  // 4) 補上雲端未定義月份的預設國定假日（不推送）
   seedHolidays();
   // 4b) 安全網：本機殘留的舊 H 班碼改為 H1
   migrateShiftCodes();
