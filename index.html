@@ -176,7 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="mnav-btn" onclick="changeMonth(1)">›</button>
   </div>
   <div style="display:flex;gap:8px;padding:6px 12px;background:#fff;border-bottom:1px solid var(--border)">
-    <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearTodayShifts()">🗑 清除今日</button>
+    <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearDayShifts()">🗑 清除指定日期</button>
     <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearMonthShifts()">🗑 清除當月</button>
   </div>
   <div class="stat-bar" id="stat-bar"></div>
@@ -540,11 +540,13 @@ function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
 // ===== SCHEDULE PAGE =====
-function clearTodayShifts(){
-  const today=new Date();
+function clearDayShifts(){
   const y=state.curYear, m=state.curMonth;
-  if(today.getFullYear()!==y||today.getMonth()+1!==m){showToast('今天不在目前月份');return;}
-  const day=today.getDate();
+  const total=daysInMonth(y,m);
+  const input=prompt(`清除哪一天所有人的班別？\n請輸入日期（1～${total}）`);
+  if(input===null) return;
+  const day=parseInt(input);
+  if(!day||day<1||day>total){showToast('日期無效');return;}
   if(!confirm(`確定清除 ${m}月${day}日 所有人的班別？`)) return;
   const sch=getSchedule(y,m);
   getEmployeesForMonth(y,m).forEach(emp=>{ if(sch[emp.id]) delete sch[emp.id][day]; });
