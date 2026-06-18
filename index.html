@@ -1489,7 +1489,7 @@ function renderAutoScheduleModal(y,m){
       :`<span style="font-size:10px;color:#3498db;margin-left:4px">計時</span>`;
     return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="font-weight:600;font-size:14px;margin-bottom:6px">${emp.name}${tag}
-        <span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選指定休假</span>
+        <span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選不能上班的日期</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:3px" id="leaves-${emp.id}">${dayBtns}</div>
     </div>`;
@@ -1599,36 +1599,30 @@ function autoGenAlgo(y,m,designatedLeaves){
     // 步驟3：標準正職排班
     const allowedShifts=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts:['A'];
 
-    // 步驟3a：國定假日→國、週六日→休
+    // 步驟3a：國定假日→國
     for(let d=1;d<=days;d++){
       if(sch[emp.id][d]) continue;
-      const wk=weekday(y,m,d);
-      if(holidays.includes(d)){ sch[emp.id][d]='國'; }
-      else if(wk===0||wk===6){ sch[emp.id][d]='休'; }
+      if(holidays.includes(d)) sch[emp.id][d]='國';
     }
 
-    // 步驟3b：計算目前休假天數，補足至 redDays
+    // 步驟3b：補足休假天數至 redDays，均勻分散到未排日期
     const offCount=()=>{ let c=0; for(let d=1;d<=days;d++) if(isOff(sch[emp.id][d])) c++; return c; };
     let extra=redDays-offCount();
     if(extra>0){
-      // 找出未排的平日（週一到週五），均勻分配
       const avail=[];
-      for(let d=1;d<=days;d++){
-        if(!sch[emp.id][d]){ const wk=weekday(y,m,d); if(wk>=1&&wk<=5) avail.push(d); }
-      }
+      for(let d=1;d<=days;d++){ if(!sch[emp.id][d]) avail.push(d); }
       const step=Math.max(1,Math.floor(avail.length/(extra+1)));
       for(let i=0;i<extra&&i<avail.length;i++){
-        sch[emp.id][avail[Math.min((i+1)*step-1, avail.length-1)]]='休';
+        sch[emp.id][avail[Math.min((i+1)*step-1,avail.length-1)]]='休';
       }
     }
 
-    // 步驟3c：確保每週至少 2 天休假
+    // 步驟3c：確保每週（日～六）至少 2 天休假
     weeks.forEach(wk=>{
       const weekOff=wk.filter(d=>isOff(sch[emp.id][d])).length;
       if(weekOff<2){
-        const toAdd=2-weekOff;
         const avail=wk.filter(d=>!sch[emp.id][d]);
-        for(let i=0;i<toAdd&&i<avail.length;i++) sch[emp.id][avail[i]]='休';
+        for(let i=0;i<2-weekOff&&i<avail.length;i++) sch[emp.id][avail[i]]='休';
       }
     });
 
@@ -1671,13 +1665,13 @@ function renderAutoRulesSettings(){
         workShifts.map(([code])=>`<option value="${code}" ${weekdayShift===code?'selected':''}>${code}</option>`).join('');
       extra=`
         <div class="form-group" style="margin-bottom:8px">
-          <label>平日固定班別</label>
+          <label>平日固定班別<span style="font-size:11px;color:var(--gray);margin-left:4px">（留空則從允許班別輪排）</span></label>
           <select onchange="saveEmpAutoRule('${emp.id}','weekdayShift',this.value)"
             style="padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:100%">${wdOpts}</select>
         </div>
         <div class="form-group" style="margin-bottom:8px">
           <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','offWeekends',this.checked)"
-            ${offWeekends?'checked':''} style="width:auto;margin-right:6px">六、日及國定假日一律排休</label>
+            ${offWeekends?'checked':''} style="width:auto;margin-right:6px">特殊規則：六、日及國定假日一律排休</label>
         </div>`;
     }
 
