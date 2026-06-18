@@ -453,7 +453,7 @@ function scheduleGistPush(){
   const cfg=getGistCfg();
   if(!cfg) return;
   clearTimeout(_pushTimer);
-  _pushTimer=setTimeout(()=>pushToGist(false), 2000);
+  _pushTimer=setTimeout(()=>{ _pushTimer=null; pushToGist(false); }, 2000);
 }
 
 async function pushToGist(showMsg=true){
