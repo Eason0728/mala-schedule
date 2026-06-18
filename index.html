@@ -656,7 +656,7 @@ function renderSchedule(){
       if(isRest){ restDays++; }
       const isBirthday=emp.birthday&&emp.birthday.slice(5)===`${fmt(m)}-${fmt(d)}`;
       if(isBirthday) bg='#FFB3C1';
-      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${isBirthday?'🎂':''}${disp}</td>`;
+      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
     }
     row+=`<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
     return row;
