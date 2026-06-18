@@ -175,6 +175,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <button class="mnav-btn" onclick="changeMonth(1)">›</button>
   </div>
+  <div style="display:flex;gap:8px;padding:6px 12px;background:#fff;border-bottom:1px solid var(--border)">
+    <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearTodayShifts()">🗑 清除今日</button>
+    <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearMonthShifts()">🗑 清除當月</button>
+  </div>
   <div class="stat-bar" id="stat-bar"></div>
   <div id="shift-legend" style="display:flex;overflow-x:auto;padding:6px 12px;gap:6px;background:#fafafa;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch"></div>
   <div class="tbl-wrap">
@@ -536,6 +540,27 @@ function openModal(id){ document.getElementById(id).classList.add('show'); }
 function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
 // ===== SCHEDULE PAGE =====
+function clearTodayShifts(){
+  const today=new Date();
+  const y=state.curYear, m=state.curMonth;
+  if(today.getFullYear()!==y||today.getMonth()+1!==m){showToast('今天不在目前月份');return;}
+  const day=today.getDate();
+  if(!confirm(`確定清除 ${m}月${day}日 所有人的班別？`)) return;
+  const sch=getSchedule(y,m);
+  getEmployeesForMonth(y,m).forEach(emp=>{ if(sch[emp.id]) delete sch[emp.id][day]; });
+  saveSchedule(y,m,sch);
+  renderSchedule();
+  showToast(`已清除 ${m}/${day} 所有班別`);
+}
+
+function clearMonthShifts(){
+  const y=state.curYear, m=state.curMonth;
+  if(!confirm(`確定清除 ${y}年${m}月 所有人的班別？此操作無法復原！`)) return;
+  saveSchedule(y,m,{});
+  renderSchedule();
+  showToast('已清除當月所有班別');
+}
+
 function changeMonth(d){
   state.curMonth+=d;
   if(state.curMonth>12){state.curMonth=1;state.curYear++;}
