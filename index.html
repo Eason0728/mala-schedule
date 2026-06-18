@@ -227,15 +227,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="section-title">☁️ 雲端同步</div>
   <div class="card" id="gist-setting-card">
     <div id="gist-status" style="font-size:13px;margin-bottom:12px;color:var(--gray)">⚫ 未連線</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步</button>
-      <button class="btn btn-ghost" onclick="pushToGist(true)">⬆ 上傳</button>
-      <button class="btn btn-danger btn-sm" onclick="disconnectGist()">斷線</button>
+
+    <!-- 已連線：同步按鈕 + QR code -->
+    <div id="gist-connected-ui" style="display:none">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步</button>
+        <button class="btn btn-ghost" onclick="pushToGist(true)">⬆ 上傳</button>
+        <button class="btn btn-danger btn-sm" onclick="disconnectGist()">斷線</button>
+      </div>
+      <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);line-height:1.8">
+        掃描下方 QR code 在其他裝置上設定同步
+      </div>
+      <div id="gist-qr" style="text-align:center;margin-top:10px"></div>
     </div>
-    <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);line-height:1.8" id="gist-setup-hint">
-      掃描下方 QR code 在手機上設定同步
+
+    <!-- 未連線：初次設定表單 -->
+    <div id="gist-setup-ui">
+      <div style="font-size:12px;color:var(--gray);line-height:1.8;margin-bottom:10px">
+        <b>初次設定步驟：</b><br>
+        1. 前往 <b>gist.github.com</b>，建立一個新的 Gist（任意內容），複製網址中的 ID（英數字串）<br>
+        2. 前往 <b>github.com/settings/tokens</b>，產生新 Token，勾選 <b>gist</b> 權限<br>
+        3. 填入下方並按「連線」
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label style="font-size:12px">Gist ID</label>
+        <input id="input-gist-id" type="text" placeholder="e.g. 636d3670f265c5d21055..." style="font-size:13px">
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label style="font-size:12px">GitHub Token</label>
+        <input id="input-gist-token" type="password" placeholder="ghp_xxxxxxxxxxxx" style="font-size:13px">
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="connectGist()">🔗 連線</button>
     </div>
-    <div id="gist-qr" style="text-align:center;margin-top:10px"></div>
   </div>
 
   <div class="section-title">✨ 自動排班規則</div>
@@ -1514,25 +1537,45 @@ function updateGistStatus(){
   const el=document.getElementById('gist-status');
   if(!el) return;
   const cfg=getGistCfg();
+  const connectedUI=document.getElementById('gist-connected-ui');
+  const setupUI=document.getElementById('gist-setup-ui');
   if(cfg){
     el.innerHTML='🟢 已連線（每 30 秒自動同步）';
     el.style.color='var(--green)';
+    if(connectedUI) connectedUI.style.display='block';
+    if(setupUI) setupUI.style.display='none';
+    const qrDiv=document.getElementById('gist-qr');
+    if(qrDiv){
+      const setupUrl=`https://eason0728.github.io/mala-schedule/#gist=${cfg.gistId}&token=${cfg.token}`;
+      qrDiv.innerHTML=`
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setupUrl)}"
+             style="border-radius:8px;border:1px solid var(--border)" alt="QR">
+        <div style="font-size:11px;color:var(--gray);margin-top:6px">用手機掃描，自動設定雲端同步</div>`;
+    }
   } else {
     el.innerHTML='⚫ 未連線';
     el.style.color='var(--gray)';
+    if(connectedUI) connectedUI.style.display='none';
+    if(setupUI) setupUI.style.display='block';
   }
-  // Show QR code for phone setup
-  const qrDiv=document.getElementById('gist-qr');
-  if(!qrDiv) return;
-  if(cfg){
-    const setupUrl=`https://eason0728.github.io/mala-schedule/#gist=${cfg.gistId}&token=${cfg.token}`;
-    qrDiv.innerHTML=`
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setupUrl)}"
-           style="border-radius:8px;border:1px solid var(--border)" alt="QR">
-      <div style="font-size:11px;color:var(--gray);margin-top:6px">用手機掃描，自動設定雲端同步</div>`;
-  } else {
-    qrDiv.innerHTML='';
-  }
+}
+
+async function connectGist(){
+  const gistId=(document.getElementById('input-gist-id')?.value||'').trim();
+  const token=(document.getElementById('input-gist-token')?.value||'').trim();
+  if(!gistId||!token){ showToast('請填入 Gist ID 和 Token'); return; }
+  showToast('驗證中…', 2000);
+  try{
+    const r=await fetch(`https://api.github.com/gists/${gistId}`,{
+      headers:{'Authorization':'Bearer '+token}
+    });
+    if(!r.ok) throw new Error(`HTTP ${r.status}，請確認 ID 和 Token 是否正確`);
+    saveGistCfg({gistId,token});
+    updateGistStatus();
+    showToast('✅ 連線成功');
+    await pushToGist(false);
+    startGistPolling();
+  }catch(e){ showToast('⚠️ 連線失敗：'+e.message); }
 }
 
 function clearAllData(){
