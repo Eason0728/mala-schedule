@@ -236,6 +236,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="section-title">✨ 自動排班規則</div>
   <div class="card" id="auto-rules-list"></div>
 
+  <div class="section-title">📋 每日班別需求</div>
+  <div class="card" id="day-req-card"></div>
+
   <div class="section-title">關於</div>
   <div class="card" style="color:var(--gray);font-size:13px;line-height:1.8">
     <p>麻的🔥小辛辣 排班系統 v1.0</p>
@@ -1255,7 +1258,35 @@ function renderSettings(){
   document.getElementById('shift-defs').innerHTML=html;
 
   renderAutoRulesSettings();
+  renderDayReqSettings();
   updateGistStatus();
+}
+
+function renderDayReqSettings(){
+  const el=document.getElementById('day-req-card');
+  if(!el) return;
+  const req=getDayReq();
+  const shifts=getShifts();
+  const typeLabel={weekday:'平日（一～五）',saturday:'週六',sunday:'週日'};
+  let html='';
+  ['weekday','saturday','sunday'].forEach(dt=>{
+    const rows=(req[dt]||[]).map(r=>{
+      const badges=r.shifts.map(s=>{
+        const sh=shifts[s]||{color:'#eee',textColor:'#333'};
+        return `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700;background:${sh.color};color:${sh.textColor};margin-right:3px">${s}</span>`;
+      }).join('<span style="font-size:11px;color:var(--gray)"> / </span>');
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <div style="flex:1">${badges}</div>
+        <div style="font-size:13px;color:var(--gray)">× ${r.count}</div>
+      </div>`;
+    }).join('');
+    html+=`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:700;color:var(--gray);margin-bottom:6px">${typeLabel[dt]}</div>
+      ${rows}
+    </div>`;
+  });
+  html+=`<div style="font-size:11px;color:var(--gray);margin-top:10px">如需調整班別需求，請告知負責人修改設定。</div>`;
+  el.innerHTML=html;
 }
 
 function deleteShift(code){
@@ -1445,6 +1476,27 @@ function clearAllData(){
 function getAutoRules(){ return {...{empRules:{}}, ...load('mala_auto_rules',{})}; }
 function saveAutoRules(r){ save('mala_auto_rules',r); }
 
+const DEFAULT_DAY_REQ={
+  weekday:[
+    {label:'E',  shifts:['E'],        count:1},
+    {label:'F',  shifts:['F'],        count:1},
+    {label:'B',  shifts:['B'],        count:1},
+    {label:'D',  shifts:['D'],        count:1},
+    {label:'C/D1/C2', shifts:['C','D1','C2'], count:1}
+  ],
+  saturday:[
+    {label:'A',  shifts:['A'],  count:2},
+    {label:'C',  shifts:['C'],  count:1},
+    {label:'D',  shifts:['D'],  count:1}
+  ],
+  sunday:[
+    {label:'A',  shifts:['A'],  count:2},
+    {label:'C',  shifts:['C'],  count:1},
+    {label:'C2', shifts:['C2'], count:1}
+  ]
+};
+function getDayReq(){ return load('mala_day_req', DEFAULT_DAY_REQ); }
+
 // 紅字天數：六、日＋國定假日
 function countRedDays(y,m){
   const days=daysInMonth(y,m), hols=getHolidays(y,m);
@@ -1472,25 +1524,37 @@ function renderAutoScheduleModal(y,m){
   const redDays=countRedDays(y,m);
 
   function empRow(emp){
+    const empR=(getAutoRules().empRules||{})[emp.id]||{};
+    const isWorkMode=empR.designatedWorkMode||false;
     const empSch=sch[emp.id]||{};
-    const existingLeaves=[];
-    for(let d=1;d<=days;d++){ if(empSch[d]==='指') existingLeaves.push(d); }
+    // work-mode: pre-select days already marked with the emp's allowed shift
+    // leave-mode: pre-select days already marked 指
+    const preSel=[];
+    const allowedShifts=empR.allowedShifts||['C'];
+    for(let d=1;d<=days;d++){
+      const c=empSch[d]||'';
+      if(isWorkMode){ if(allowedShifts.includes(c)||c==='C') preSel.push(d); }
+      else { if(c==='指') preSel.push(d); }
+    }
     let dayBtns='';
     for(let d=1;d<=days;d++){
       const wk=weekday(y,m,d);
       const isRed=wk===0||wk===6||holidays.includes(d);
-      const isSel=existingLeaves.includes(d);
-      const cls='auto-day-btn'+(isRed?' red-day':'')+(isSel?' selected':'');
-      const bg=isSel?'background:#e74c3c;color:#fff;border-color:#e74c3c':'';
-      dayBtns+=`<button class="${cls}" style="${bg}" onclick="toggleLeaveDay('${emp.id}',${d},this)">${d}</button>`;
+      const isSel=preSel.includes(d);
+      const selColor=isWorkMode?'#27ae60':'#e74c3c';
+      const cls='auto-day-btn'+(isRed&&!isWorkMode?' red-day':'')+(isSel?' selected':'');
+      const bg=isSel?`background:${selColor};color:#fff;border-color:${selColor}`:'';
+      dayBtns+=`<button class="${cls}" data-mode="${isWorkMode?'work':'leave'}"
+        style="${bg}" onclick="toggleLeaveDay('${emp.id}',${d},this)">${d}</button>`;
     }
     const tag=emp.isFullTime
       ?`<span style="font-size:10px;color:#e67e22;margin-left:4px">正職</span>`
       :`<span style="font-size:10px;color:#3498db;margin-left:4px">計時</span>`;
+    const hint=isWorkMode
+      ?`<span style="font-size:11px;font-weight:600;color:#27ae60;margin-left:6px">點選上班的日期</span>`
+      :`<span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選不能上班的日期</span>`;
     return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="font-weight:600;font-size:14px;margin-bottom:6px">${emp.name}${tag}
-        <span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選不能上班的日期</span>
-      </div>
+      <div style="font-weight:600;font-size:14px;margin-bottom:6px">${emp.name}${tag}${hint}</div>
       <div style="display:flex;flex-wrap:wrap;gap:3px" id="leaves-${emp.id}">${dayBtns}</div>
     </div>`;
   }
@@ -1512,27 +1576,31 @@ function renderAutoScheduleModal(y,m){
 
 function toggleLeaveDay(empId,d,btn){
   const sel=btn.classList.toggle('selected');
-  if(sel){ btn.style.background='#e74c3c'; btn.style.color='#fff'; btn.style.borderColor='#e74c3c'; }
+  const isWork=btn.dataset.mode==='work';
+  const activeColor=isWork?'#27ae60':'#e74c3c';
+  if(sel){ btn.style.background=activeColor; btn.style.color='#fff'; btn.style.borderColor=activeColor; }
   else {
-    btn.style.background='';
-    btn.style.borderColor=btn.classList.contains('red-day')?'#e74c3c':'var(--border)';
-    btn.style.color=btn.classList.contains('red-day')?'#e74c3c':'#333';
+    btn.style.background=''; btn.style.color='#333'; btn.style.borderColor='var(--border)';
   }
 }
 
 function runAutoSchedule(){
   const y=state.curYear, m=state.curMonth;
   const emps=getEmployeesForMonth(y,m);
-  const designatedLeaves={};
+  const rules=getAutoRules();
+  const cannotWork={}, workDays={};
   emps.forEach(emp=>{
     const container=document.getElementById(`leaves-${emp.id}`);
-    designatedLeaves[emp.id]=[];
+    const isWorkMode=(rules.empRules||{})[emp.id]?.designatedWorkMode||false;
+    const days=[];
     if(container) container.querySelectorAll('.auto-day-btn.selected').forEach(btn=>{
-      designatedLeaves[emp.id].push(parseInt(btn.textContent));
+      days.push(parseInt(btn.textContent));
     });
+    if(isWorkMode) workDays[emp.id]=days;
+    else cannotWork[emp.id]=days;
   });
   const sch=getSchedule(y,m);
-  const result=autoGenAlgo(y,m,designatedLeaves);
+  const result=autoGenAlgo(y,m,{cannotWork,workDays});
   emps.forEach(emp=>{ sch[emp.id]=result[emp.id]||{}; });
   saveSchedule(y,m,sch);
   closeModal('auto-overlay');
@@ -1540,98 +1608,161 @@ function runAutoSchedule(){
   showToast('✅ 班表已自動生成');
 }
 
-function autoGenAlgo(y,m,designatedLeaves){
+function autoGenAlgo(y,m,inputData){
+  // inputData = { cannotWork:{empId:[days]}, workDays:{empId:[days]} }
   const days=daysInMonth(y,m);
   const holidays=getHolidays(y,m);
   const rules=getAutoRules();
+  const dayReq=getDayReq();
   const emps=getEmployeesForMonth(y,m);
   const sch={};
-  const redDays=countRedDays(y,m);
+  emps.forEach(e=>{ sch[e.id]={}; });
+
+  const isOff=c=>!c||c==='休'||c==='指'||c==='特'||c==='國';
+  const getDT=d=>{
+    const wk=weekday(y,m,d);
+    return wk===6?'saturday':wk===0?'sunday':'weekday';
+  };
 
   // 計算週清單 (週日為起點)
-  function getWeeks(){
-    const firstWk=weekday(y,m,1);
-    const weeks=[];
-    for(let ws=1-firstWk; ws<=days; ws+=7){
-      const wk=[];
-      for(let d=ws;d<ws+7;d++){ if(d>=1&&d<=days) wk.push(d); }
-      if(wk.length) weeks.push(wk);
-    }
-    return weeks;
+  const firstWk=weekday(y,m,1);
+  const weeks=[];
+  for(let ws=1-firstWk;ws<=days;ws+=7){
+    const wk=[];
+    for(let d=ws;d<ws+7;d++){ if(d>=1&&d<=days) wk.push(d); }
+    if(wk.length) weeks.push(wk);
   }
-  const weeks=getWeeks();
 
-  const isOff=c=>c==='休'||c==='指'||c==='特'||c==='國';
-
+  // ── 步驟1：鎖定特殊員工 ──
   emps.forEach(emp=>{
-    sch[emp.id]={};
     const empR=(rules.empRules||{})[emp.id]||{};
-    const leaves=designatedLeaves[emp.id]||[];
 
-    // 步驟1：鎖定指定休假
-    leaves.forEach(d=>{ sch[emp.id][d]='指'; });
+    // 不能上班日 → 指
+    (inputData.cannotWork[emp.id]||[]).forEach(d=>{ sch[emp.id][d]='指'; });
 
-    // 步驟2：計時人員 — 非指定休假日填允許班別
-    if(!emp.isFullTime){
-      const allowedShifts=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts:[];
-      if(!allowedShifts.length) return; // 沒設允許班別就跳過
-      let si=0;
-      for(let d=1;d<=days;d++){
-        if(sch[emp.id][d]) continue;
-        sch[emp.id][d]=allowedShifts[si%allowedShifts.length];
-        si++;
-      }
-      return;
-    }
-
-    // 步驟3：平日固定班別＋週末必休（如陳盈如）
-    if(empR.weekdayShift && empR.offWeekends){
+    // 陳盈如型：平日固定班別＋六日國定休
+    if(empR.weekdayShift&&empR.offWeekends){
       for(let d=1;d<=days;d++){
         if(sch[emp.id][d]) continue;
         const wk=weekday(y,m,d);
-        const isHol=holidays.includes(d);
-        if(wk===0||wk===6||isHol){ sch[emp.id][d]='休'; }
-        else { sch[emp.id][d]=empR.weekdayShift; }
-      }
-      return;
-    }
-
-    // 步驟3：標準正職排班
-    const allowedShifts=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts:['A'];
-
-    // 步驟3a：國定假日→國
-    for(let d=1;d<=days;d++){
-      if(sch[emp.id][d]) continue;
-      if(holidays.includes(d)) sch[emp.id][d]='國';
-    }
-
-    // 步驟3b：補足休假天數至 redDays，均勻分散到未排日期
-    const offCount=()=>{ let c=0; for(let d=1;d<=days;d++) if(isOff(sch[emp.id][d])) c++; return c; };
-    let extra=redDays-offCount();
-    if(extra>0){
-      const avail=[];
-      for(let d=1;d<=days;d++){ if(!sch[emp.id][d]) avail.push(d); }
-      const step=Math.max(1,Math.floor(avail.length/(extra+1)));
-      for(let i=0;i<extra&&i<avail.length;i++){
-        sch[emp.id][avail[Math.min((i+1)*step-1,avail.length-1)]]='休';
+        if(wk===0||wk===6||holidays.includes(d)) sch[emp.id][d]='休';
+        else sch[emp.id][d]=empR.weekdayShift;
       }
     }
 
-    // 步驟3c：確保每週（日～六）至少 2 天休假
-    weeks.forEach(wk=>{
-      const weekOff=wk.filter(d=>isOff(sch[emp.id][d])).length;
-      if(weekOff<2){
-        const avail=wk.filter(d=>!sch[emp.id][d]);
-        for(let i=0;i<2-weekOff&&i<avail.length;i++) sch[emp.id][avail[i]]='休';
+    // 王鈺屏型：指定上班日=允許班別(第一個)，其餘休
+    if(empR.designatedWorkMode){
+      const shift=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts[0]:'C';
+      for(let d=1;d<=days;d++){
+        if(sch[emp.id][d]) continue;
+        if((inputData.workDays[emp.id]||[]).includes(d)) sch[emp.id][d]=shift;
+        else sch[emp.id][d]='休';
       }
-    });
-
-    // 步驟3d：剩餘空格填工作班別（輪排）
-    let si=0;
-    for(let d=1;d<=days;d++){
-      if(!sch[emp.id][d]){ sch[emp.id][d]=allowedShifts[si%allowedShifts.length]; si++; }
     }
   });
+
+  // 餘下員工（一般排班）
+  const activeEmps=emps.filter(emp=>{
+    const empR=(rules.empRules||{})[emp.id]||{};
+    return !(empR.weekdayShift&&empR.offWeekends)&&!empR.designatedWorkMode;
+  });
+
+  // ── 步驟2：每週確保每人有 2 天休假，優先休「人力最充裕」的日子 ──
+  weeks.forEach(week=>{
+    // 計算各日「需求人數」（只算一般員工）
+    const demand={};
+    week.forEach(d=>{
+      const dt=getDT(d);
+      const tot=(dayReq[dt]||[]).reduce((s,r)=>s+r.count,0);
+      // 已被特殊員工覆蓋的需求
+      let covered=0;
+      emps.filter(e=>!activeEmps.includes(e)).forEach(e=>{
+        if(!isOff(sch[e.id][d])) covered++;
+      });
+      demand[d]=Math.max(0,tot-covered);
+    });
+
+    // 追蹤「確定上班」人數（隨休假分配更新）
+    const committed={};
+    week.forEach(d=>{ committed[d]=0; });
+
+    // 優先處理「指定休最多」的員工（彈性最小）
+    const sorted=[...activeEmps].sort((a,b)=>{
+      const ar=week.filter(d=>isOff(sch[a.id][d])).length;
+      const br=week.filter(d=>isOff(sch[b.id][d])).length;
+      return br-ar;
+    });
+
+    sorted.forEach(emp=>{
+      const existRest=week.filter(d=>isOff(sch[emp.id][d])).length;
+      const need=Math.max(0,2-existRest);
+      const avail=week.filter(d=>!sch[emp.id][d]);
+
+      if(need===0){ avail.forEach(d=>committed[d]++); return; }
+
+      // 選「surplus最大」的日子休假（surplus=committed - demand，越高越可以少一人）
+      const score=d=>committed[d]-demand[d];
+      const bySurplus=[...avail].sort((a,b)=>score(b)-score(a));
+      const restSet=new Set(bySurplus.slice(0,need).map(d=>d));
+
+      avail.forEach(d=>{
+        if(restSet.has(d)) sch[emp.id][d]='休';
+        else committed[d]++;
+      });
+    });
+  });
+
+  // ── 步驟3：依每日班別需求分配班別 ──
+  for(let d=1;d<=days;d++){
+    const dt=getDT(d);
+    // 國定假日：一般員工標記「國」，不套用班別需求
+    if(holidays.includes(d)){
+      activeEmps.forEach(emp=>{ if(!sch[emp.id][d]) sch[emp.id][d]='國'; });
+      continue;
+    }
+
+    const reqs=(dayReq[dt]||[]).map(r=>({...r,rem:r.count}));
+
+    // 扣除特殊員工已覆蓋的需求
+    emps.filter(e=>!activeEmps.includes(e)).forEach(e=>{
+      const code=sch[e.id][d];
+      if(!code||isOff(code)) return;
+      for(const r of reqs){ if(r.shifts.includes(code)&&r.rem>0){r.rem--;break;} }
+    });
+
+    // 本日上班的一般員工
+    const workers=activeEmps.filter(emp=>!isOff(sch[emp.id][d])&&!sch[emp.id][d]);
+    const assigned=new Set();
+
+    // 特異度低的需求（選擇少）先分配
+    reqs.sort((a,b)=>a.shifts.length-b.shifts.length);
+
+    for(const req of reqs){
+      for(let i=0;i<req.rem;i++){
+        // 找能排此班的員工
+        let pick=workers.find(e=>{
+          if(assigned.has(e.id)) return false;
+          const allowed=(rules.empRules||{})[e.id]?.allowedShifts||[];
+          return req.shifts.some(s=>allowed.includes(s));
+        });
+        // 找不到有允許班別的就隨機取一個未指派的
+        if(!pick) pick=workers.find(e=>!assigned.has(e.id));
+        if(!pick) break;
+        const allowed=(rules.empRules||{})[pick.id]?.allowedShifts||[];
+        sch[pick.id][d]=req.shifts.find(s=>allowed.includes(s))||req.shifts[0];
+        assigned.add(pick.id);
+      }
+    }
+
+    // 剩餘未指派但上班的員工 → 取允許班別第一個
+    workers.forEach(emp=>{
+      if(!assigned.has(emp.id)){
+        const allowed=(rules.empRules||{})[emp.id]?.allowedShifts||[];
+        sch[emp.id][d]=allowed[0]||'A';
+        assigned.add(emp.id);
+      }
+    });
+  }
 
   return sch;
 }
@@ -1663,7 +1794,12 @@ function renderAutoRulesSettings(){
       const offWeekends=r.offWeekends||false;
       const wdOpts=`<option value="">-- 依允許班別輪排 --</option>`+
         workShifts.map(([code])=>`<option value="${code}" ${weekdayShift===code?'selected':''}>${code}</option>`).join('');
+      const designatedWorkMode=r.designatedWorkMode||false;
       extra=`
+        <div class="form-group" style="margin-bottom:8px">
+          <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','designatedWorkMode',this.checked)"
+            ${designatedWorkMode?'checked':''} style="width:auto;margin-right:6px">指定上班模式（每月輸入她的上班日，固定排允許班別，不套用一般規則）</label>
+        </div>`+(!designatedWorkMode?`
         <div class="form-group" style="margin-bottom:8px">
           <label>平日固定班別<span style="font-size:11px;color:var(--gray);margin-left:4px">（留空則從允許班別輪排）</span></label>
           <select onchange="saveEmpAutoRule('${emp.id}','weekdayShift',this.value)"
@@ -1672,7 +1808,7 @@ function renderAutoRulesSettings(){
         <div class="form-group" style="margin-bottom:8px">
           <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','offWeekends',this.checked)"
             ${offWeekends?'checked':''} style="width:auto;margin-right:6px">特殊規則：六、日及國定假日一律排休</label>
-        </div>`;
+        </div>`:'');
     }
 
     return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
