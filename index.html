@@ -1821,11 +1821,13 @@ function autoGenAlgo(y,m,inputData){
       }
     }
 
-    // 剩餘未指派但上班的員工 → 取允許班別第一個
+    // 剩餘未指派但上班的員工 → 優先選當日需求中的允許班別，避免排出需求外的班別
+    const dayShifts=[...new Set(reqs.flatMap(r=>r.shifts))];
     workers.forEach(emp=>{
       if(!assigned.has(emp.id)){
         const allowed=(rules.empRules||{})[emp.id]?.allowedShifts||[];
-        sch[emp.id][d]=allowed[0]||'A';
+        const best=allowed.find(s=>dayShifts.includes(s))||allowed[0]||dayShifts[0]||'A';
+        sch[emp.id][d]=best;
         assigned.add(emp.id);
       }
     });
