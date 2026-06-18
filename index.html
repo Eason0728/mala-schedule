@@ -1861,7 +1861,7 @@ function renderAutoRulesSettings(){
         <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','designatedWorkMode',this.checked)"
           ${designatedWorkMode?'checked':''} style="width:auto;margin-right:6px">指定上班模式（每月輸入上班日，固定排允許班別，不套用一般規則）</label>
       </div>`;
-    if(emp.isFullTime&&!designatedWorkMode){
+    if(emp.isFullTime){
       const weekdayShift=r.weekdayShift||'';
       const offWeekends=r.offWeekends||false;
       const monthlyRestLimit=r.monthlyRestLimit!=null?r.monthlyRestLimit:null;
