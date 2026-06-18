@@ -181,6 +181,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="stat-bar" id="stat-bar"></div>
   <div id="shift-legend" style="display:flex;overflow-x:auto;padding:6px 12px;gap:6px;background:#fafafa;border-bottom:1px solid var(--border);-webkit-overflow-scrolling:touch"></div>
+  <div id="abnormality-bar" style="display:none;padding:8px 12px;background:#fff8e1;border-bottom:2px solid #f39c12"></div>
   <div class="tbl-wrap">
     <table class="sch-tbl" id="sch-table"></table>
   </div>
@@ -582,9 +583,10 @@ function renderSchedule(){
   const shifts=getShifts();
   const holidays=getHolidays(y,m);
 
-  // Stat bar + legend
+  // Stat bar + legend + abnormality
   renderStatBar(y,m,emps,sch,shifts,holidays);
   renderShiftLegend(shifts);
+  renderAbnormalities();
 
   // Table
   const tbl=document.getElementById('sch-table');
@@ -782,6 +784,46 @@ function renderShiftLegend(shifts){
       ${code} <span style="font-weight:400;font-size:9px">${sh.time.replace('\n',' ')}</span>
     </div>`
   ).join('');
+}
+
+function checkScheduleAbnormalities(y,m){
+  const days=daysInMonth(y,m);
+  const sch=getSchedule(y,m);
+  const emps=getEmployeesForMonth(y,m);
+  const dayReq=getDayReq();
+  const holidays=getHolidays(y,m);
+  const result=[];
+  for(let d=1;d<=days;d++){
+    if(holidays.includes(d)) continue; // 國定假日不檢查
+    const wk=weekday(y,m,d);
+    const dt=wk===6?'saturday':wk===0?'sunday':'weekday';
+    const reqs=dayReq[dt]||[];
+    if(!reqs.length) continue;
+    const issues=[];
+    for(const req of reqs){
+      const actual=emps.filter(emp=>req.shifts.includes((sch[emp.id]||{})[d])).length;
+      if(actual<req.count) issues.push(`缺${req.label}（需${req.count}人、現${actual}人）`);
+    }
+    if(issues.length) result.push({day:d,wk,issues});
+  }
+  return result;
+}
+
+function renderAbnormalities(){
+  const el=document.getElementById('abnormality-bar');
+  if(!el) return;
+  const list=checkScheduleAbnormalities(state.curYear,state.curMonth);
+  if(!list.length){ el.style.display='none'; return; }
+  const dn=['日','一','二','三','四','五','六'];
+  el.style.display='block';
+  el.innerHTML=
+    `<div style="font-size:12px;font-weight:700;color:#e67e22;margin-bottom:6px">⚠️ 班別需求異常（${list.length} 天）</div>`+
+    list.map(({day,wk,issues})=>
+      `<div style="padding:3px 0;border-bottom:1px solid #ffe0b2;font-size:12px">
+        <span style="font-weight:700;color:#c0392b">${state.curMonth}/${day}（週${dn[wk]}）</span>
+        <span style="color:#555;margin-left:6px">${issues.join('、')}</span>
+      </div>`
+    ).join('');
 }
 
 // ===== LUNAR CALENDAR (農曆) =====
