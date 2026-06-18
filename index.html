@@ -2077,6 +2077,8 @@ function migrateShiftCodes(){
   // 2) if connected, pull the cloud copy FIRST and start polling
   if(cfg){
     await pullFromGist(false);
+    // After pull, push local-only data (e.g. fixedcost set before Gist was connected)
+    scheduleGistPush();
     startGistPolling();
   }
   // 3) only seed demo data for a brand-new standalone user (no cloud, no data)
