@@ -1561,9 +1561,8 @@ function renderAutoScheduleModal(y,m){
   function empRow(emp){
     const empR=(getAutoRules().empRules||{})[emp.id]||{};
     const isWorkMode=empR.designatedWorkMode||false;
+    const isFixedSchedule=!isWorkMode&&!!(empR.weekdayShift&&empR.offWeekends);
     const empSch=sch[emp.id]||{};
-    // work-mode: pre-select days already marked with the emp's allowed shift
-    // leave-mode: pre-select days already marked 指
     const preSel=[];
     const allowedShifts=empR.allowedShifts||['C'];
     for(let d=1;d<=days;d++){
@@ -1576,6 +1575,11 @@ function renderAutoScheduleModal(y,m){
       const wk=weekday(y,m,d);
       const isRed=wk===0||wk===6||holidays.includes(d);
       const isSel=preSel.includes(d);
+      // 固定班規則：紅字天已自動休，按鈕灰掉不可選
+      if(isFixedSchedule&&isRed){
+        dayBtns+=`<button class="auto-day-btn red-day" style="opacity:0.35;cursor:default" disabled>${d}</button>`;
+        continue;
+      }
       const selColor=isWorkMode?'#27ae60':'#e74c3c';
       const cls='auto-day-btn'+(isRed&&!isWorkMode?' red-day':'')+(isSel?' selected':'');
       const bg=isSel?`background:${selColor};color:#fff;border-color:${selColor}`:'';
@@ -1587,6 +1591,8 @@ function renderAutoScheduleModal(y,m){
       :`<span style="font-size:10px;color:#3498db;margin-left:4px">計時</span>`;
     const hint=isWorkMode
       ?`<span style="font-size:11px;font-weight:600;color:#27ae60;margin-left:6px">點選上班的日期</span>`
+      :isFixedSchedule
+      ?`<span style="font-size:11px;font-weight:600;color:#8e44ad;margin-left:6px">固定：平日${empR.weekdayShift}班，六日休｜可輸入指定休假日</span>`
       :`<span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選不能上班的日期</span>`;
     return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="font-weight:600;font-size:14px;margin-bottom:6px">${emp.name}${tag}${hint}</div>
