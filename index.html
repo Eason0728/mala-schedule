@@ -1849,19 +1849,19 @@ function renderAutoRulesSettings(){
                background:${sh.color};color:${sh.textColor}">${code}</button>`;
     }).join('');
 
-    let extra='';
-    if(emp.isFullTime){
+    const designatedWorkMode=r.designatedWorkMode||false;
+    let extra=`
+      <div class="form-group" style="margin-bottom:8px">
+        <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','designatedWorkMode',this.checked)"
+          ${designatedWorkMode?'checked':''} style="width:auto;margin-right:6px">指定上班模式（每月輸入上班日，固定排允許班別，不套用一般規則）</label>
+      </div>`;
+    if(emp.isFullTime&&!designatedWorkMode){
       const weekdayShift=r.weekdayShift||'';
       const offWeekends=r.offWeekends||false;
       const monthlyRestLimit=r.monthlyRestLimit!=null?r.monthlyRestLimit:null;
       const wdOpts=`<option value="">-- 依允許班別輪排 --</option>`+
         workShifts.map(([code])=>`<option value="${code}" ${weekdayShift===code?'selected':''}>${code}</option>`).join('');
-      const designatedWorkMode=r.designatedWorkMode||false;
-      extra=`
-        <div class="form-group" style="margin-bottom:8px">
-          <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','designatedWorkMode',this.checked)"
-            ${designatedWorkMode?'checked':''} style="width:auto;margin-right:6px">指定上班模式（每月輸入她的上班日，固定排允許班別，不套用一般規則）</label>
-        </div>`+(!designatedWorkMode?`
+      extra+=`
         <div class="form-group" style="margin-bottom:8px">
           <label>平日固定班別<span style="font-size:11px;color:var(--gray);margin-left:4px">（留空則從允許班別輪排）</span></label>
           <select onchange="saveEmpAutoRule('${emp.id}','weekdayShift',this.value)"
@@ -1883,7 +1883,7 @@ function renderAutoRulesSettings(){
               ${monthlyRestLimit==null?'disabled':''}>
             天，其餘全上班
           </label>
-        </div>`:'');
+        </div>`;
     }
 
     return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
