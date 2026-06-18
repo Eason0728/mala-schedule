@@ -267,7 +267,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="form-group"><label>姓名 *</label><input type="text" id="emp-name" placeholder="張小明"></div>
       <div class="form-group"><label>到職日 *</label><input type="date" id="emp-hire"></div>
     </div>
-    <div class="form-group"><label>聯絡電話</label><input type="tel" id="emp-phone" placeholder="0912345678"></div>
+    <div class="form-row">
+      <div class="form-group"><label>聯絡電話</label><input type="tel" id="emp-phone" placeholder="0912345678"></div>
+      <div class="form-group"><label>生日</label><input type="date" id="emp-birthday"></div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>時薪（元）*</label><input type="number" id="emp-wage" placeholder="183" min="0"></div>
       <div class="form-group"><label>底薪（元）</label><input type="number" id="emp-base" placeholder="0" min="0"></div>
@@ -624,7 +627,9 @@ function renderSchedule(){
       }
       if(isWorking){ totalH+=calcWorkHours(sh); }
       if(isRest){ restDays++; }
-      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
+      const isBirthday=emp.birthday&&emp.birthday.slice(5)===`${fmt(m)}-${fmt(d)}`;
+      if(isBirthday) bg='#FFB3C1';
+      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${isBirthday?'🎂':''}${disp}</td>`;
     }
     row+=`<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
     return row;
@@ -968,6 +973,7 @@ function openEmpModal(id=''){
   document.getElementById('emp-name').value=e.name||'';
   document.getElementById('emp-hire').value=e.hireDate||'';
   document.getElementById('emp-phone').value=e.phone||'';
+  document.getElementById('emp-birthday').value=e.birthday||'';
   document.getElementById('emp-wage').value=e.wage||'';
   document.getElementById('emp-base').value=e.base||'';
   document.getElementById('emp-ins').value=e.insurance||'';
@@ -994,6 +1000,7 @@ function saveEmployee(){
     id,name,
     hireDate:document.getElementById('emp-hire').value,
     phone:document.getElementById('emp-phone').value.trim(),
+    birthday:document.getElementById('emp-birthday').value||'',
     wage,
     base:parseFloat(document.getElementById('emp-base').value)||0,
     insurance:parseFloat(document.getElementById('emp-ins').value)||0,
