@@ -1722,15 +1722,16 @@ function autoGenAlgo(y,m,inputData){
     week.forEach(d=>{ committed[d]=0; });
 
     // 優先處理「指定休最多」的員工（彈性最小）
+    const offSet=c=>c&&isOff(c); // 只計算明確設定的休假（不含未分配）
     const sorted=[...activeEmps].sort((a,b)=>{
-      const ar=week.filter(d=>isOff(sch[a.id][d])).length;
-      const br=week.filter(d=>isOff(sch[b.id][d])).length;
+      const ar=week.filter(d=>offSet(sch[a.id][d])).length;
+      const br=week.filter(d=>offSet(sch[b.id][d])).length;
       return br-ar;
     });
 
     sorted.forEach(emp=>{
       const empMR=(rules.empRules||{})[emp.id]||{};
-      const existRest=week.filter(d=>isOff(sch[emp.id][d])).length;
+      const existRest=week.filter(d=>offSet(sch[emp.id][d])).length;
       const avail=week.filter(d=>!sch[emp.id][d]);
 
       // monthlyRestLimit: rest days pre-assigned in Step 1; just count working days
@@ -1770,7 +1771,7 @@ function autoGenAlgo(y,m,inputData){
     });
 
     // 本日上班的一般員工
-    const workers=activeEmps.filter(emp=>!isOff(sch[emp.id][d])&&!sch[emp.id][d]);
+    const workers=activeEmps.filter(emp=>!sch[emp.id][d]);
     const assigned=new Set();
 
     // 特異度低的需求（選擇少）先分配
