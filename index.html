@@ -1729,10 +1729,14 @@ function autoGenAlgo(y,m,inputData){
     });
 
     sorted.forEach(emp=>{
+      const empMR=(rules.empRules||{})[emp.id]||{};
       const existRest=week.filter(d=>isOff(sch[emp.id][d])).length;
-      const need=Math.max(0,2-existRest);
       const avail=week.filter(d=>!sch[emp.id][d]);
 
+      // monthlyRestLimit: rest days pre-assigned in Step 1; just count working days
+      if(empMR.monthlyRestLimit!=null){ avail.forEach(d=>committed[d]++); return; }
+
+      const need=Math.max(0,2-existRest);
       if(need===0){ avail.forEach(d=>committed[d]++); return; }
 
       // 選「surplus最大」的日子休假（surplus=committed - demand，越高越可以少一人）
@@ -1827,6 +1831,7 @@ function renderAutoRulesSettings(){
     if(emp.isFullTime){
       const weekdayShift=r.weekdayShift||'';
       const offWeekends=r.offWeekends||false;
+      const monthlyRestLimit=r.monthlyRestLimit!=null?r.monthlyRestLimit:null;
       const wdOpts=`<option value="">-- 依允許班別輪排 --</option>`+
         workShifts.map(([code])=>`<option value="${code}" ${weekdayShift===code?'selected':''}>${code}</option>`).join('');
       const designatedWorkMode=r.designatedWorkMode||false;
@@ -1843,6 +1848,19 @@ function renderAutoRulesSettings(){
         <div class="form-group" style="margin-bottom:8px">
           <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','offWeekends',this.checked)"
             ${offWeekends?'checked':''} style="width:auto;margin-right:6px">特殊規則：六、日及國定假日一律排休</label>
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <input type="checkbox" onchange="onMonthlyRestLimitToggle('${emp.id}',this.checked)"
+              ${monthlyRestLimit!=null?'checked':''} style="width:auto;margin-right:2px">
+            每月只排休
+            <input type="number" id="mrl-${emp.id}" min="0" max="31"
+              value="${monthlyRestLimit!=null?monthlyRestLimit:2}"
+              onchange="saveEmpAutoRule('${emp.id}','monthlyRestLimit',parseInt(this.value)||0)"
+              style="width:46px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;font-size:13px"
+              ${monthlyRestLimit==null?'disabled':''}>
+            天，其餘全上班
+          </label>
         </div>`:'');
     }
 
@@ -1888,6 +1906,21 @@ function saveEmpAutoRule(empId,key,value){
   if(!rules.empRules) rules.empRules={};
   if(!rules.empRules[empId]) rules.empRules[empId]={};
   rules.empRules[empId][key]=value;
+  saveAutoRules(rules);
+}
+
+function onMonthlyRestLimitToggle(empId,checked){
+  const rules=getAutoRules();
+  if(!rules.empRules) rules.empRules={};
+  if(!rules.empRules[empId]) rules.empRules[empId]={};
+  const inp=document.getElementById('mrl-'+empId);
+  if(checked){
+    if(inp) inp.disabled=false;
+    rules.empRules[empId].monthlyRestLimit=inp?parseInt(inp.value)||2:2;
+  } else {
+    if(inp) inp.disabled=true;
+    delete rules.empRules[empId].monthlyRestLimit;
+  }
   saveAutoRules(rules);
 }
 
