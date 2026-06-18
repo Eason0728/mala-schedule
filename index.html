@@ -1571,16 +1571,13 @@ function autoGenAlgo(y,m,designatedLeaves){
     // 步驟1：鎖定指定休假
     leaves.forEach(d=>{ sch[emp.id][d]='指'; });
 
-    // 步驟2：計時人員 — 依可出勤日＋允許班別排班
+    // 步驟2：計時人員 — 非指定休假日填允許班別
     if(!emp.isFullTime){
       const allowedShifts=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts:[];
-      const availDays=empR.availableDays||[];
       if(!allowedShifts.length) return; // 沒設允許班別就跳過
       let si=0;
       for(let d=1;d<=days;d++){
         if(sch[emp.id][d]) continue;
-        const wk=weekday(y,m,d);
-        if(availDays.length && !availDays.includes(wk)) continue; // 非可出勤日
         sch[emp.id][d]=allowedShifts[si%allowedShifts.length];
         si++;
       }
@@ -1655,8 +1652,6 @@ function renderAutoRulesSettings(){
   const rules=getAutoRules();
   const shifts=getShifts();
   const workShifts=sortedShiftEntries(shifts).filter(([,sh])=>!sh.isOff);
-  const WD_LABELS=['日','一','二','三','四','五','六'];
-
   function empBlock(emp){
     const r=(rules.empRules||{})[emp.id]||{};
     const allowed=r.allowedShifts||[];
@@ -1684,19 +1679,6 @@ function renderAutoRulesSettings(){
           <label><input type="checkbox" onchange="saveEmpAutoRule('${emp.id}','offWeekends',this.checked)"
             ${offWeekends?'checked':''} style="width:auto;margin-right:6px">六、日及國定假日一律排休</label>
         </div>`;
-    } else {
-      // 計時：可出勤的星期
-      const avail=r.availableDays||[];
-      const dayChks=[0,1,2,3,4,5,6].map(wd=>{
-        const on=avail.includes(wd);
-        return `<label style="display:inline-flex;align-items:center;gap:3px;font-size:13px;cursor:pointer;margin-right:8px">
-          <input type="checkbox" onchange="toggleAvailDay('${emp.id}',${wd},this.checked)" ${on?'checked':''}
-            style="width:auto"> 週${WD_LABELS[wd]}</label>`;
-      }).join('');
-      extra=`<div class="form-group" style="margin-bottom:8px">
-        <label>可出勤日（週）</label>
-        <div style="margin-top:6px;line-height:2">${dayChks}</div>
-      </div>`;
     }
 
     return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
@@ -1719,15 +1701,6 @@ function renderAutoRulesSettings(){
   el.innerHTML=html;
 }
 
-function toggleAvailDay(empId,wd,on){
-  const rules=getAutoRules();
-  if(!rules.empRules) rules.empRules={};
-  if(!rules.empRules[empId]) rules.empRules[empId]={};
-  let avail=rules.empRules[empId].availableDays||[];
-  avail=on?[...new Set([...avail,wd])]:avail.filter(d=>d!==wd);
-  rules.empRules[empId].availableDays=avail;
-  saveAutoRules(rules);
-}
 
 function toggleAllowedShift(empId,code,btn){
   const rules=getAutoRules();
