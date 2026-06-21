@@ -1446,26 +1446,71 @@ function renderDayReqSettings(){
   if(!el) return;
   const req=getDayReq();
   const shifts=getShifts();
+  const workShifts=sortedShiftEntries(shifts).filter(([,sh])=>!sh.isOff);
   const typeLabel={weekday:'平日（一～五）',saturday:'週六',sunday:'週日'};
   let html='';
   ['weekday','saturday','sunday'].forEach(dt=>{
-    const rows=(req[dt]||[]).map(r=>{
-      const badges=r.shifts.map(s=>{
-        const sh=shifts[s]||{color:'#eee',textColor:'#333'};
-        return `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700;background:${sh.color};color:${sh.textColor};margin-right:3px">${s}</span>`;
-      }).join('<span style="font-size:11px;color:var(--gray)"> / </span>');
-      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-        <div style="flex:1">${badges}</div>
-        <div style="font-size:13px;color:var(--gray)">× ${r.count}</div>
+    const rules=req[dt]||[];
+    const rows=rules.map((r,idx)=>{
+      const shiftBtns=workShifts.map(([code,sh])=>{
+        const active=r.shifts.includes(code);
+        return `<button onclick="toggleDayReqShift('${dt}',${idx},'${code}',this)"
+          style="padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+                 border:2px solid ${active?'var(--red)':'var(--border)'};
+                 background:${sh.color};color:${sh.textColor}">${code}</button>`;
+      }).join('');
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;display:flex;flex-wrap:wrap;gap:5px">${shiftBtns}</div>
+          <input type="number" min="0" value="${r.count}" style="width:48px;padding:4px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center"
+            onchange="updateDayReqCount('${dt}',${idx},this.value)">
+          <button class="btn btn-danger btn-sm" onclick="deleteDayReqRule('${dt}',${idx})">刪</button>
+        </div>
       </div>`;
     }).join('');
-    html+=`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="font-size:12px;font-weight:700;color:var(--gray);margin-bottom:6px">${typeLabel[dt]}</div>
-      ${rows}
+    html+=`<div style="padding:10px 0;border-bottom:2px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-size:12px;font-weight:700;color:var(--gray)">${typeLabel[dt]}</div>
+        <button class="btn btn-outline btn-sm" onclick="addDayReqRule('${dt}')">＋ 新增規則</button>
+      </div>
+      ${rows||'<div style="font-size:12px;color:var(--gray);padding:6px 0">尚無規則</div>'}
     </div>`;
   });
-  html+=`<div style="font-size:11px;color:var(--gray);margin-top:10px">如需調整班別需求，請告知負責人修改設定。</div>`;
+  html+=`<div style="font-size:11px;color:var(--gray);margin-top:10px">點班別代碼切換需求班別，右側數字為需求人數（0 表示停用此規則）。</div>`;
   el.innerHTML=html;
+}
+
+function saveDayReq(req){ save('mala_day_req',req); }
+
+function toggleDayReqShift(dt,idx,code,btn){
+  const req=getDayReq();
+  const r=req[dt][idx];
+  if(r.shifts.includes(code)) r.shifts=r.shifts.filter(c=>c!==code);
+  else r.shifts.push(code);
+  r.label=r.shifts.join('/')||'未設定';
+  saveDayReq(req);
+  renderDayReqSettings();
+}
+
+function updateDayReqCount(dt,idx,value){
+  const req=getDayReq();
+  req[dt][idx].count=Math.max(0,parseInt(value)||0);
+  saveDayReq(req);
+}
+
+function addDayReqRule(dt){
+  const req=getDayReq();
+  if(!req[dt]) req[dt]=[];
+  req[dt].push({label:'未設定',shifts:[],count:1});
+  saveDayReq(req);
+  renderDayReqSettings();
+}
+
+function deleteDayReqRule(dt,idx){
+  const req=getDayReq();
+  req[dt].splice(idx,1);
+  saveDayReq(req);
+  renderDayReqSettings();
 }
 
 function deleteShift(code){
@@ -1733,7 +1778,7 @@ const DEFAULT_DAY_REQ={
     {label:'C2', shifts:['C2'], count:1}
   ]
 };
-function getDayReq(){ return load('mala_day_req', DEFAULT_DAY_REQ); }
+function getDayReq(){ return load('mala_day_req', JSON.parse(JSON.stringify(DEFAULT_DAY_REQ))); }
 
 // 紅字天數：六、日＋國定假日
 function countRedDays(y,m){
