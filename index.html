@@ -176,6 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="mnav-btn" onclick="changeMonth(1)">›</button>
   </div>
   <div style="display:flex;gap:8px;padding:6px 12px;background:#fff;border-bottom:1px solid var(--border)">
+    <button class="btn btn-outline btn-sm" style="flex:1" onclick="openDelivImport()">📋 匯入外送</button>
     <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearDayShifts()">🗑 清除指定日期</button>
     <button class="btn btn-danger btn-sm" style="flex:1" onclick="clearMonthShifts()">🗑 清除當月</button>
   </div>
@@ -382,6 +383,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('auto-overlay')">取消</button>
       <button class="btn btn-primary" style="flex:1;background:#8e44ad" onclick="runAutoSchedule()">生成班表</button>
+    </div>
+  </div>
+</div>
+
+<!-- 外送匯入 Modal -->
+<div class="overlay" id="deliv-import-overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2>📋 匯入外送紀錄</h2>
+      <button class="modal-close" onclick="closeModal('deliv-import-overlay')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>貼上文字（格式：日期 棟別 餐別，例如「7/9、7/10台元D棟午餐」「7/13~7/15竹科U棟午餐」）</label>
+      <textarea id="deliv-import-text" rows="8" style="width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit"></textarea>
+    </div>
+    <div style="font-size:12px;color:var(--gray);margin-bottom:8px">會套用目前畫面上的年份（<span id="deliv-import-year"></span>），依文字中的月份寫入對應月份的外送欄位，已有資料的日期會被覆蓋。</div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('deliv-import-overlay')">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="runDelivImport()">匯入</button>
     </div>
   </div>
 </div>
@@ -924,6 +944,62 @@ function editDelivery(meal,d){
   if(v.trim()==='') delete deliv[meal][d]; else deliv[meal][d]=v.trim();
   saveDelivery(y,m,deliv);
   renderSchedule();
+}
+
+// ===== 外送文字匯入 =====
+// 解析像「7/9、7/10台元D棟午餐」「7/13~7/15竹科U棟午餐」這種日期＋棟別＋餐別連續貼上的文字
+function expandDeliveryDates(dateStr,y){
+  const days=[];
+  if(dateStr.includes('~')){
+    const [a,b]=dateStr.split('~');
+    const [am,ad]=a.split('/').map(Number);
+    const [bm,bd]=b.split('/').map(Number);
+    const cur=new Date(y,am-1,ad);
+    const end=new Date(y,bm-1,bd);
+    while(cur<=end){
+      days.push({month:cur.getMonth()+1,day:cur.getDate()});
+      cur.setDate(cur.getDate()+1);
+    }
+  } else {
+    dateStr.split(/[、,]/).forEach(d=>{
+      const [mm,dd]=d.split('/').map(Number);
+      if(mm&&dd) days.push({month:mm,day:dd});
+    });
+  }
+  return days;
+}
+function parseDeliveryText(text,y){
+  const re=/(\d{1,2}\/\d{1,2}(?:[、,~]\d{1,2}\/\d{1,2})*)([^\d]+?)(午餐|晚餐)/g;
+  const entries=[];
+  let m;
+  while((m=re.exec(text))){
+    const label=m[2].trim();
+    if(!label) continue;
+    const meal=m[3]==='午餐'?'lunch':'dinner';
+    expandDeliveryDates(m[1],y).forEach(({month,day})=>entries.push({month,day,meal,label}));
+  }
+  return entries;
+}
+function openDelivImport(){
+  document.getElementById('deliv-import-text').value='';
+  document.getElementById('deliv-import-year').textContent=state.curYear;
+  openModal('deliv-import-overlay');
+}
+function runDelivImport(){
+  const text=document.getElementById('deliv-import-text').value;
+  const y=state.curYear;
+  const entries=parseDeliveryText(text,y);
+  if(!entries.length){ showToast('沒有解析到任何資料，請確認格式'); return; }
+  const cache={};
+  entries.forEach(({month,day,meal,label})=>{
+    if(!cache[month]) cache[month]=getDelivery(y,month);
+    if(!cache[month][meal]) cache[month][meal]={};
+    cache[month][meal][day]=label;
+  });
+  Object.entries(cache).forEach(([month,d])=>saveDelivery(y,parseInt(month),d));
+  closeModal('deliv-import-overlay');
+  renderSchedule();
+  showToast(`✅ 已匯入 ${entries.length} 筆外送紀錄`);
 }
 
 // ===== LEAVE & HOURS CALCULATIONS =====
