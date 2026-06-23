@@ -1842,8 +1842,16 @@ function renderAutoScheduleModal(y,m){
       :isFixedSchedule
       ?`<span style="font-size:11px;font-weight:600;color:#8e44ad;margin-left:6px">固定：平日${empR.weekdayShift}班，六日休｜可輸入指定休假日</span>`
       :`<span style="font-size:11px;font-weight:400;color:var(--gray);margin-left:6px">點選不能上班的日期</span>`;
+    const pasteRow=isWorkMode?'':`
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <input type="text" id="leave-text-${emp.id}" placeholder="貼上指定休日期，如 9、10、15~17"
+          style="flex:1;max-width:300px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();applyLeaveText('${emp.id}',this,${days});}">
+        <button class="btn btn-outline btn-sm" onclick="applyLeaveText('${emp.id}',document.getElementById('leave-text-${emp.id}'),${days})">套用</button>
+      </div>`;
     return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="font-weight:600;font-size:14px;margin-bottom:6px">${emp.name}${tag}${hint}</div>
+      ${pasteRow}
       <div style="display:flex;flex-wrap:wrap;gap:3px" id="leaves-${emp.id}">${dayBtns}</div>
     </div>`;
   }
@@ -1871,6 +1879,50 @@ function toggleLeaveDay(empId,d,btn){
   else {
     btn.style.background=''; btn.style.color='#333'; btn.style.borderColor='var(--border)';
   }
+}
+
+// 解析純數字日期文字（如「9、10、15~17」「9,10,15-17」「9 10 15 16 17」）成排序去重的日期陣列
+function parseDayListText(text,maxDay){
+  if(!text) return [];
+  const days=new Set();
+  const norm=text
+    .replace(/[，、]/g,',')          // 全形逗號、頓號
+    .replace(/[～]/g,'~')            // 全形波浪號
+    .replace(/　/g,' ')          // 全形空白
+    .replace(/\s*~\s*/g,'~');        // 去掉波浪號前後空白，讓「9 ~ 12」也成立（- 須緊貼數字才算區段，避免吃到負號）
+  norm.split(/[,\s]+/).forEach(tok=>{
+    tok=tok.trim();
+    if(!tok) return;
+    const rng=tok.match(/^(\d+)[~-](\d+)$/);
+    if(rng){
+      let a=parseInt(rng[1],10), b=parseInt(rng[2],10);
+      if(a>b)[a,b]=[b,a];
+      for(let d=a;d<=b;d++) if(d>=1&&d<=maxDay) days.add(d);
+    } else if(/^\d+$/.test(tok)){
+      const d=parseInt(tok,10);
+      if(d>=1&&d<=maxDay) days.add(d);
+    }
+  });
+  return [...days].sort((a,b)=>a-b);
+}
+
+// 把輸入框文字解析後「取代」該員工的指定休選擇：清掉現有選擇，只勾選文字裡的日期
+function applyLeaveText(empId,inputEl,maxDay){
+  const days=parseDayListText(inputEl.value,maxDay);
+  if(!days.length){ showToast('沒有解析到日期，請確認格式'); return; }
+  const container=document.getElementById(`leaves-${empId}`);
+  if(!container) return;
+  const want=new Set(days);
+  let applied=0;
+  container.querySelectorAll('.auto-day-btn').forEach(btn=>{
+    if(btn.disabled) return; // 固定班規則員工的六日已自動休、按鈕停用，跳過
+    const d=parseInt(btn.textContent,10);
+    const sel=want.has(d);
+    if(sel!==btn.classList.contains('selected')) toggleLeaveDay(empId,d,btn);
+    if(sel) applied++;
+  });
+  inputEl.value='';
+  showToast(`✅ 已套用 ${applied} 天指定休`);
 }
 
 function runAutoSchedule(){
