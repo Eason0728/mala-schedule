@@ -1621,9 +1621,13 @@ async function imageToA4(node, filename){
     scale=Math.max(1, scale);
     const canvas=await html2canvas(cont,{scale,backgroundColor:'#fff',useCORS:true});
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});
-    const pw=297, ph=210, iw=canvas.width, ih=canvas.height;
-    const r=Math.min(pw/iw, ph/ih);          // 維持比例填滿頁面
+    const iw=canvas.width, ih=canvas.height;
+    // 頁面尺寸直接吻合內容長寬比 → 內容滿版、不留白；手機開啟「符合寬度」即一頁完整呈現、不需滑動
+    const longSide=297; // mm（橫式長邊）
+    const shortSide=+(longSide*Math.min(iw,ih)/Math.max(iw,ih)).toFixed(1);
+    const pdf=new jsPDF({orientation: iw>=ih?'landscape':'portrait', unit:'mm', format:[longSide, shortSide], compress:true});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const r=Math.min(pw/iw, ph/ih);          // 維持比例（頁面已吻合比例，等同滿版、無變形）
     const w=iw*r, h=ih*r;
     pdf.addImage(canvas.toDataURL('image/png'),'PNG',(pw-w)/2,(ph-h)/2,w,h); // PNG 文字清晰
     deliverPdf(pdf, filename);
