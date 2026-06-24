@@ -702,7 +702,8 @@ function renderSchedule(){
       let bg=colBg, tc='#ccc', cls='shift-cell', disp=code||'　';
       if(sh){
         if(isWorking){ tc='#000'; }                          // 班別：無網底、黑字（六日仍套用欄位網底）
-        else { bg=sh.color; tc='#e74c3c'; }                  // 休假類（休/特/指/國）：保留網底、紅字
+        else if(code==='休'){ tc='#e74c3c'; }                // 休：不套自己的網底，沿用欄位背景（白/週末/假日），紅字
+        else { bg=sh.color; tc='#e74c3c'; }                  // 其他休假類（特/指/國/公休）：保留網底、紅字
       }
       if(isWorking){ totalH+=calcWorkHours(sh); }
       if(isRest){ restDays++; }
