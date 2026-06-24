@@ -262,6 +262,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
   </div>
 
+  <div class="section-title">💾 資料備份／還原</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--gray);line-height:1.8;margin-bottom:12px">
+      匯出＝把全部資料（員工、各月班表、外送、設定…）存成一個檔案。<br>
+      匯入＝用備份檔取代目前資料；<b>若此裝置已啟用編輯，匯入後會自動發佈到雲端</b>，其他裝置就會同步。
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="flex:1" onclick="exportBackup()">⬇ 匯出備份</button>
+      <button class="btn btn-primary" style="flex:1" onclick="document.getElementById('import-backup-file').click()">⬆ 匯入備份</button>
+    </div>
+    <input type="file" id="import-backup-file" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
+  </div>
+
   <div class="section-title">✨ 自動排班規則</div>
   <div class="card" id="auto-rules-list"></div>
 
@@ -1704,6 +1717,73 @@ function disconnectGist(){
   localStorage.removeItem('mala_gist_cfg');
   updateGistStatus();
   showToast('已解除編輯權限，改為唯讀模式');
+}
+
+// 收集本機全部 mala_ 資料（排除 token），等同 buildSnapshot 的內容
+function collectBackup(){
+  const snap={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(/^mala_/.test(k) && k!=='mala_gist_cfg'){
+      try{ snap[k]=JSON.parse(localStorage.getItem(k)); }catch(e){ snap[k]=localStorage.getItem(k); }
+    }
+  }
+  return snap;
+}
+
+// 匯出備份：下載一個 JSON 檔（桌機直接下載；iOS 走可點連結，跟 PDF 一樣）
+function exportBackup(){
+  const json=JSON.stringify(collectBackup(),null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const fname=`mala-backup-${new Date().toISOString().slice(0,10)}.json`;
+  if(isIOS()){
+    let ov=document.getElementById('backup-link-overlay'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='backup-link-overlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px';
+    ov.innerHTML=`<div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center">
+      <div style="font-size:17px;font-weight:800;margin-bottom:6px">備份已產生 💾</div>
+      <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:18px">點下方開啟，再按瀏覽器「分享」存到「檔案」</div>
+      <a href="${url}" download="${fname}" target="_blank" rel="noopener" style="display:block;background:var(--red);color:#fff;padding:13px;border-radius:10px;font-weight:700;text-decoration:none;margin-bottom:10px">開啟備份檔</a>
+      <button type="button" style="background:none;border:none;color:#888;font-size:14px;padding:6px" onclick="this.closest('#backup-link-overlay').remove()">關閉</button>
+    </div>`;
+    document.body.appendChild(ov);
+  } else {
+    const a=document.createElement('a'); a.href=url; a.download=fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast('✅ 已匯出備份');
+  }
+}
+
+// 匯入備份：讀 JSON → 取代本機全部資料 → 若此裝置可編輯則發佈到雲端
+function importBackup(input){
+  const file=input.files&&input.files[0];
+  input.value=''; // 允許重選同一檔
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    let snap;
+    try{ snap=JSON.parse(reader.result); }catch(e){ showToast('⚠️ 檔案格式錯誤，不是有效 JSON'); return; }
+    if(!snap || typeof snap!=='object' || !Array.isArray(snap.mala_employees)){ showToast('⚠️ 不是有效的排班備份檔'); return; }
+    const canPublish = !IS_LOCAL_DEV && !!getGistToken();
+    const msg = canPublish
+      ? '匯入會用備份內容「取代」目前所有資料，並發佈到雲端（其他裝置會同步）。確定？'
+      : '匯入會用備份內容「取代」此裝置目前所有資料。確定？';
+    if(!confirm(msg)) return;
+    _suppressPush=true;
+    Object.entries(snap).forEach(([k,v])=>{
+      if(/^mala_/.test(k) && k!=='mala_gist_cfg'){ localStorage.setItem(k, JSON.stringify(v)); }
+    });
+    _suppressPush=false;
+    renderSchedule();
+    if(typeof renderEmployees==='function') renderEmployees();
+    if(typeof renderSalary==='function') renderSalary();
+    if(typeof renderSettings==='function') renderSettings();
+    if(canPublish){ pushToGist(true); showToast('✅ 已匯入，正在發佈到雲端…'); }
+    else { showToast('✅ 已匯入此裝置'+(IS_LOCAL_DEV?'（本機測試版，不會上傳雲端）':'（此裝置唯讀，未上傳；請在有啟用編輯的裝置匯入才會發佈）')); }
+  };
+  reader.readAsText(file);
 }
 
 function updateGistStatus(){
