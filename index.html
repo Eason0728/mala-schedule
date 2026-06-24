@@ -682,12 +682,8 @@ function renderSchedule(){
     const entitle=emp.isFullTime?(emp.leaveQuota>0?emp.leaveQuota:calcLeaveEntitlement(emp.hireDate)):0;
     const used=calcLeaveUsed(emp.id, y);
     const remain=Math.max(entitle-used,0);
-    const reqH=emp.isFullTime?calcRequiredHours(y,m):null;
-    let row=`<tr><td class="sticky-col">
-      <div class="emp-cell-name">${emp.name}</div>
-      <div class="emp-cell-sub">到職 ${hireStr}</div>
-      ${emp.isFullTime?`<div class="emp-cell-leave">特休剩 ${remain}天</div><div class="emp-cell-req">應出 ${reqH}h</div>`:''}
-    </td>`;
+    // 先跑日期迴圈算出實際排班工時 totalH，name cell 才能顯示「排班時數」
+    let dayCells='';
     for(let d=1;d<=days;d++){
       let code=empSch[d]||'';
       // 計時人員：已開始排班後，空白日才視為休（未排班前保持空白）
@@ -706,9 +702,14 @@ function renderSchedule(){
       if(isRest){ restDays++; }
       const isBirthday=emp.birthday&&emp.birthday.slice(5)===`${fmt(m)}-${fmt(d)}`;
       if(isBirthday) bg='#FFB3C1';
-      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
+      dayCells+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
     }
-    row+=`<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
+    // 正職資訊欄顯示「排班時數」（實際排班工時），取代原本的「應出時數」
+    let row=`<tr><td class="sticky-col">
+      <div class="emp-cell-name">${emp.name}</div>
+      <div class="emp-cell-sub">到職 ${hireStr}</div>
+      ${emp.isFullTime?`<div class="emp-cell-leave">特休剩 ${remain}天</div><div class="emp-cell-req">排班 ${totalH.toFixed(1)}h</div>`:''}
+    </td>${dayCells}<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
     return row;
   };
   // 分組：正職人員在上、計時人員在下，各自加上色塊標題列
@@ -1605,8 +1606,9 @@ async function imageToA4(node, filename){
   cont.style.cssText='position:absolute;left:-99999px;top:0;background:#fff;padding:16px;display:inline-block;text-align:center';
   cont.appendChild(node);
   document.body.appendChild(cont);
-  // 截圖前把 sticky 欄位改為一般定位，避免 html2canvas 把員工欄推到右邊
-  cont.querySelectorAll('.sticky-col').forEach(el=>{ el.style.position='static'; });
+  // 截圖前把所有 sticky 定位改為一般定位：sticky-col（左欄）會被 html2canvas 推到右邊；
+  // hdr-row th（日期/星期表頭，sticky top:0）會被擺到錯位、蓋住中間某列。一律改 static 才正常。
+  cont.querySelectorAll('.sticky-col, .hdr-row th').forEach(el=>{ el.style.position='static'; });
   try{
     // 依元素尺寸自動壓低 scale：避免 iOS canvas 單邊 >4096px 或面積過大產生空白
     const baseW=cont.offsetWidth||800, baseH=cont.offsetHeight||600;
