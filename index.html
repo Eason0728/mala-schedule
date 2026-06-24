@@ -690,7 +690,7 @@ function renderSchedule(){
       if(!code && !emp.isFullTime && hasAnyShift) code='休';
       const sh=shifts[code];
       const wk=weekday(y,m,d), isHol=holidays.includes(d);
-      const colBg = isHol?'#fdeaea':((wk===0||wk===6)?'#f0f0f0':'#fff'); // 六日/國定假日淺色網底
+      const colBg = isHol?'#f9cccc':((wk===0||wk===6)?'#dcdcdc':'#fff'); // 六日/國定假日網底（加深，與白色平日明顯區隔）
       const isWorking = sh && !sh.isOff && code!=='國';
       const isRest = (sh && sh.isOff) || code==='國';
       let bg=colBg, tc='#ccc', cls='shift-cell', disp=code||'　';
