@@ -813,12 +813,8 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
   // 外送次數（午/晚/合計）
   const deliv=getDelivery(y,m);
   const lunch=Object.keys(deliv.lunch||{}).length, dinner=Object.keys(deliv.dinner||{}).length;
-  // 正職人員當月休假天數（休/特/國/指）
-  let ftRest=0;
-  emps.filter(e=>e.isFullTime).forEach(e=>{
-    const es=sch[e.id]||{};
-    for(let d=1;d<=days;d++){ const c=es[d]||''; const s=shifts[c]; if((s&&s.isOff)||c==='國') ftRest++; }
-  });
+  // 正職當月可休天數＝紅字天數（六日＋國定假日），即每位正職應休的天數
+  const ftRest=countRedDays(y,m);
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
     <div class="stat-chip" style="cursor:pointer" onclick="editRevenue()"><div class="sv">$${(rev/10000).toFixed(0)}萬</div><div class="sl">預估營業額 ✎</div></div>
