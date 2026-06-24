@@ -496,9 +496,15 @@ function buildSnapshot(){
   return snap;
 }
 
+// 本機測試版旗標：用 localhost / 127.0.0.1 開啟時為 true。
+// 此時完全不跟雲端同步（不自動拉、不輪詢、不上傳）→ 編輯只存本機、永遠不會被雲端還原。
+// 線上版（eason0728.github.io）為 false，維持雲端同步＋輪詢，多裝置共用。
+const IS_LOCAL_DEV = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+
 // Debounced push (wait 2s after last change) — 僅在此裝置有 token（可編輯）時才上傳
 let _pushTimer=null;
 function scheduleGistPush(){
+  if(IS_LOCAL_DEV) return;      // 本機測試版：絕不上傳，編輯只存本機
   if(!getGistToken()) return;  // 唯讀裝置不上傳
   clearTimeout(_pushTimer);
   _pushTimer=setTimeout(()=>{ _pushTimer=null; pushToGist(false); }, 2000);
@@ -1705,6 +1711,14 @@ function updateGistStatus(){
   const canEdit=!!getGistToken();
   const editorUI=document.getElementById('gist-editor-ui');
   const setupUI=document.getElementById('gist-setup-ui');
+  if(IS_LOCAL_DEV){
+    // 本機測試版：不跟雲端同步，編輯只存本機、不會被還原
+    el.innerHTML='🧪 本機測試版（不同步雲端，編輯只存本機、不會被還原）';
+    el.style.color='#b8860b';
+    if(editorUI) editorUI.style.display='none';
+    if(setupUI) setupUI.style.display='none';
+    return;
+  }
   if(canEdit){
     el.innerHTML='🟢 已連線雲端（可編輯，每 30 秒自動同步）';
     el.style.color='var(--green)';
@@ -2381,13 +2395,16 @@ function migrateShiftCodes(){
     const gistId=p.get('gist')||getGistId(), token=p.get('token');
     if(token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
   }
-  // 2) 一律從雲端 Gist 讀取（讀取免 token），並啟動輪詢
-  await pullFromGist(false);
-  // 若此裝置可編輯，補推本機獨有的資料（例如連雲端前設定的固定成本）
-  scheduleGistPush();
-  startGistPolling();
+  // 2) 雲端同步：線上版才自動讀取雲端 + 啟動 30 秒輪詢；本機測試版完全不同步
+  if(!IS_LOCAL_DEV){
+    await pullFromGist(false);
+    // 若此裝置可編輯，補推本機獨有的資料（例如連雲端前設定的固定成本）
+    scheduleGistPush();
+    startGistPolling();
+  }
+  // 本機測試版：保留 localStorage 既有資料、不會被還原；若完全空白才載入示範資料
   // 3) 僅在「雲端尚未有資料、本機也沒資料、且無編輯權限」時載入示範資料（避免覆蓋雲端）
-  if(!getGistToken() && !getEmployees().length){ loadDemoData(); }
+  if((IS_LOCAL_DEV || !getGistToken()) && !getEmployees().length){ loadDemoData(); }
   // 4) 補上雲端未定義月份的預設國定假日（不推送）
   seedHolidays();
   // 4b) 安全網：本機殘留的舊 H 班碼改為 H1
