@@ -33,6 +33,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 - `scheduleGistPush()`：本地改動後 debounce 2 秒才 push；`pullFromGist()` 若有 pending push（`_pushTimer`）就跳過，不蓋掉未上傳的本地編輯。
 - `startGistPolling()`：每 30 秒 pull 一次。
 - `init()`（檔尾）順序：先 `pullFromGist()` → 才補種子資料 → render，**雲端優先**，杜絕用空白/示範資料覆蓋雲端。`file://` 開啟會自動轉址到線上版（`file://` 無法連 GitHub API）。
+- **`IS_LOCAL_DEV`（localhost/127.0.0.1 開啟時為 true）= 本機測試版，完全不同步雲端**：`init` 不 `pullFromGist`、不 `startGistPolling`；`scheduleGistPush()` 一律 return。→ 本機編輯只存 localStorage、**永遠不會被雲端還原**，也絕不寫到正式 Gist。線上 `eason0728.github.io` 為 false，維持完整同步＋輪詢供多裝置共用。設定頁狀態顯示「🧪 本機測試版」。**debug「為何 localhost 不同步/改了沒上傳」前先確認這是刻意設計，不是 bug。** 本機要拉最新正式資料可手動按設定頁「立即同步」。
 
 ## 資料模型（localStorage，全部以 `mala_` 開頭）
 
@@ -60,7 +61,9 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 `DEFAULT_SHIFTS`（A/B/C/C1/C2/D/D1/E/F/H1 工作班 + 休/特/指/國 休假類），`isOff` 標記休假類。
 - `getShifts()` = DEFAULT + 自訂 - 隱藏。
 - `sortedShiftEntries()`：工作班依英文字母+數字排序，休假類（休→特→指→國）固定排最後。班別圖例、選班、設定都用它。
-- 班別格顏色規則：工作班=無網底黑字；休假類（休/特/指/國）=淺色網底紅字；六日/國定假日整欄套淺色網底。
+- 班別格顏色規則（`renderSchedule` 內，約 line 699–706）：工作班=無網底黑字；**休=不套自己的網底、沿用欄位背景＋紅字**（特意，不要改回灰底）；其他休假類（特/指/國/公休）=自己的網底＋紅字。
+  - 休假類目前用色：特 `#E8D5FF`、**指 `#FFD54F`（琥珀黃，醒目）**、國 `#ffe0e0`、公休 `#CFE2FF`。
+  - 欄位整欄網底（`colBg`）：平日白、**六日 `#dcdcdc`、國定假日 `#f9cccc`**（已加深，與白色平日明顯區隔）。
 - 設定頁可新增/編輯/刪除班別（刪除會警示使用中格數，並加入 `mala_hidden_shifts`）。
 
 ## 薪資計算（calcSalary，最容易踩雷）
@@ -90,14 +93,18 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 
 - **自動排班**：`renderAutoScheduleModal()` + `getAutoRules()`，依每人規則 + `getDayReq()` 每日需求人數自動填班。
 - **軟刪除員工**：`deleteEmployee` 設 `active=false`+`termMonth`，保留已排月份；`getEmployeesForMonth()` 控制顯示；可復職/永久刪除。
-- **匯出 PDF**：`exportPDF`/`exportSalaryPDF` 走 `imageToA4()`——**用 html2canvas 截圖再放進 jsPDF**，因為 jsPDF 內建字型無法顯示中文（會亂碼）。A4 橫式滿版、`scale:3`+PNG（高清）、截圖前把 `.sticky-col` 改 `position:static`（否則 html2canvas 會把員工欄推到右邊）。摘要列放標題下方、日期上方。
+- **匯出 PDF**：`exportPDF`/`exportSalaryPDF` 走 `imageToA4()`——**用 html2canvas 截圖再放進 jsPDF**，因為 jsPDF 內建字型無法顯示中文（會亂碼）。`scale` 依尺寸自動壓低（避免 iOS canvas 過大空白）、PNG（高清）、摘要列放標題下方、日期上方。
+  - **截圖前必須把所有 sticky 定位改 `position:static`**，selector＝`'.sticky-col, .hdr-row th'`。只改 `.sticky-col` 不夠：**`.hdr-row th`（日期/星期表頭，CSS `position:sticky;top:0`）不改，html2canvas 會把表頭擺到錯位、蓋住中間某員工列 → 上方日期不見、那位員工欄被蓋掉**。新增其他 sticky 元素也要加進這個 selector。
+  - **頁面尺寸＝吻合內容長寬比的滿版單頁**（非固定 A4）：`format:[longSide, shortSide]`，`longSide=297`、`shortSide=297*短邊/長邊`，內容滿版、無留白、隨人數自適應 → 手機一頁完整、不需滑動（使用者偏好 A：全月一頁，不要拆成兩頁）。
 
 ## 維護注意事項
 
 - **沒有 build / 測試框架**。驗證改動的方式：用 Node 跑無頭測試——mock `localStorage` 與 `document`（getElementById 回傳可寫 innerHTML 的物件），把 `<script>` 內容抽出、移除 `file://` 轉址與 `init()` IIFE 後 `eval`，再呼叫 `renderSchedule()`/`calcSalary()` 等檢查輸出。改完務必先這樣跑過再 push。
 - 模板字串內的正則若含 `</...>`（如 `</td>`）會在 heredoc 裡誤判，測試腳本改用字串 `includes` 比對。
 - **絕不 commit token**；token 只存在使用者瀏覽器 localStorage。
-- 改 `index.html` → push 部署沒問題；但**不要**從開發端用 token 寫 Gist 資料。
+- **部署流程（使用者明確要求、勿違反）**：改完**不要自動 push**。先改好讓使用者在本機測（`localhost:8765`，preview server 服務 `/Users/guoeason/mala-schedule`），明確回報「本機可測」，**問過、得到「推上去」才 push**。做法：在 feature branch commit（保持 main＝GitHub 現況）→ 得到同意才 merge main + push 部署。技術上 push `index.html` 到 GitHub Pages 沒問題，但**節奏由使用者拍板**。
+- **預覽 server**：`~/.claude/launch.json` 的 `schedule-app` 要服務 `/Users/guoeason/mala-schedule`（曾誤指向已廢棄的 `~/Desktop/AI/Claude/schedule-app`）。此 preview server 常在換回合時被系統停掉，使用者說「重啟」就 `preview_stop`→`preview_start`。
+- **絕不**從開發端用 token 寫 Gist 資料。
 - 之前 plugin/通用描述若與本檔不符，**以本檔為準**。
 
 ## 收尾：自我改進
