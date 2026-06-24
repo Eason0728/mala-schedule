@@ -99,3 +99,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 - **絕不 commit token**；token 只存在使用者瀏覽器 localStorage。
 - 改 `index.html` → push 部署沒問題；但**不要**從開發端用 token 寫 Gist 資料。
 - 之前 plugin/通用描述若與本檔不符，**以本檔為準**。
+
+## 收尾：自我改進
+
+請 review 我剛剛用完這個 skill 後的來回對話。把我重複糾正你的地方，整理成規則寫回 skill，讓下次同樣的錯不會再發生。

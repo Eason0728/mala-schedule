@@ -380,7 +380,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="modal-close" onclick="closeModal('auto-overlay')">✕</button>
     </div>
     <div id="auto-modal-body"></div>
-    <div style="display:flex;gap:10px;margin-top:14px">
+    <button class="btn btn-outline" style="width:100%;margin-top:14px" onclick="applyDesignatedOnly()">📌 只代入指休/指定上班（不生成班表）</button>
+    <div style="display:flex;gap:10px;margin-top:10px">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('auto-overlay')">取消</button>
       <button class="btn btn-primary" style="flex:1;background:#8e44ad" onclick="runAutoSchedule()">生成班表</button>
     </div>
@@ -423,7 +424,7 @@ const DEFAULT_SHIFTS = {
   '公休': {name:'公休', time:'－', hours:0, breakH:0, color:'#CFE2FF', textColor:'#1565C0', isOff:true},
   '休': {name:'休假', time:'－', hours:0, breakH:0, color:'#f5f5f5', textColor:'#aaa', isOff:true},
   '特': {name:'特休', time:'特休假', hours:0, breakH:0, color:'#E8D5FF', textColor:'#7B2FBE', isOff:true},
-  '指': {name:'指定休', time:'指定休假', hours:0, breakH:0, color:'#ffecec', textColor:'#e74c3c', isOff:true},
+  '指': {name:'指定休', time:'指定休假', hours:0, breakH:0, color:'#FFD54F', textColor:'#e74c3c', isOff:true},
   '國': {name:'國定假日', time:'國定假日', hours:0, breakH:0, color:'#ffe0e0', textColor:'#e74c3c', isOff:false},
 };
 // 每月預估營業額（圖片提供 5-12 月）；可於班表下方點擊修改
@@ -495,9 +496,15 @@ function buildSnapshot(){
   return snap;
 }
 
+// 本機測試版旗標：用 localhost / 127.0.0.1 開啟時為 true。
+// 此時完全不跟雲端同步（不自動拉、不輪詢、不上傳）→ 編輯只存本機、永遠不會被雲端還原。
+// 線上版（eason0728.github.io）為 false，維持雲端同步＋輪詢，多裝置共用。
+const IS_LOCAL_DEV = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+
 // Debounced push (wait 2s after last change) — 僅在此裝置有 token（可編輯）時才上傳
 let _pushTimer=null;
 function scheduleGistPush(){
+  if(IS_LOCAL_DEV) return;      // 本機測試版：絕不上傳，編輯只存本機
   if(!getGistToken()) return;  // 唯讀裝置不上傳
   clearTimeout(_pushTimer);
   _pushTimer=setTimeout(()=>{ _pushTimer=null; pushToGist(false); }, 2000);
@@ -681,33 +688,35 @@ function renderSchedule(){
     const entitle=emp.isFullTime?(emp.leaveQuota>0?emp.leaveQuota:calcLeaveEntitlement(emp.hireDate)):0;
     const used=calcLeaveUsed(emp.id, y);
     const remain=Math.max(entitle-used,0);
-    const reqH=emp.isFullTime?calcRequiredHours(y,m):null;
-    let row=`<tr><td class="sticky-col">
-      <div class="emp-cell-name">${emp.name}</div>
-      <div class="emp-cell-sub">到職 ${hireStr}</div>
-      ${emp.isFullTime?`<div class="emp-cell-leave">特休剩 ${remain}天</div><div class="emp-cell-req">應出 ${reqH}h</div>`:''}
-    </td>`;
+    // 先跑日期迴圈算出實際排班工時 totalH，name cell 才能顯示「排班時數」
+    let dayCells='';
     for(let d=1;d<=days;d++){
       let code=empSch[d]||'';
       // 計時人員：已開始排班後，空白日才視為休（未排班前保持空白）
       if(!code && !emp.isFullTime && hasAnyShift) code='休';
       const sh=shifts[code];
       const wk=weekday(y,m,d), isHol=holidays.includes(d);
-      const colBg = isHol?'#fdeaea':((wk===0||wk===6)?'#f0f0f0':'#fff'); // 六日/國定假日淺色網底
+      const colBg = isHol?'#f9cccc':((wk===0||wk===6)?'#dcdcdc':'#fff'); // 六日/國定假日網底（加深，與白色平日明顯區隔）
       const isWorking = sh && !sh.isOff && code!=='國';
       const isRest = (sh && sh.isOff) || code==='國';
       let bg=colBg, tc='#ccc', cls='shift-cell', disp=code||'　';
       if(sh){
         if(isWorking){ tc='#000'; }                          // 班別：無網底、黑字（六日仍套用欄位網底）
-        else { bg=sh.color; tc='#e74c3c'; }                  // 休假類（休/特/指/國）：保留網底、紅字
+        else if(code==='休'){ tc='#e74c3c'; }                // 休：不套自己的網底，沿用欄位背景（白/週末/假日），紅字
+        else { bg=sh.color; tc='#e74c3c'; }                  // 其他休假類（特/指/國/公休）：保留網底、紅字
       }
       if(isWorking){ totalH+=calcWorkHours(sh); }
       if(isRest){ restDays++; }
       const isBirthday=emp.birthday&&emp.birthday.slice(5)===`${fmt(m)}-${fmt(d)}`;
       if(isBirthday) bg='#FFB3C1';
-      row+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
+      dayCells+=`<td class="${cls}" style="background:${bg};color:${tc}" onclick="openShiftPicker('${emp.id}',${d})">${disp}</td>`;
     }
-    row+=`<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
+    // 正職資訊欄顯示「排班時數」（實際排班工時），取代原本的「應出時數」
+    let row=`<tr><td class="sticky-col">
+      <div class="emp-cell-name">${emp.name}</div>
+      <div class="emp-cell-sub">到職 ${hireStr}</div>
+      ${emp.isFullTime?`<div class="emp-cell-leave">特休剩 ${remain}天</div><div class="emp-cell-req">排班 ${totalH.toFixed(1)}h</div>`:''}
+    </td>${dayCells}<td style="background:#fdeaea;font-weight:600;color:#e74c3c">${restDays}</td><td style="background:#f9f9f9">${totalH.toFixed(1)}</td></tr>`;
     return row;
   };
   // 分組：正職人員在上、計時人員在下，各自加上色塊標題列
@@ -804,12 +813,8 @@ function renderStatBar(y,m,emps,sch,shifts,holidays){
   // 外送次數（午/晚/合計）
   const deliv=getDelivery(y,m);
   const lunch=Object.keys(deliv.lunch||{}).length, dinner=Object.keys(deliv.dinner||{}).length;
-  // 正職人員當月休假天數（休/特/國/指）
-  let ftRest=0;
-  emps.filter(e=>e.isFullTime).forEach(e=>{
-    const es=sch[e.id]||{};
-    for(let d=1;d<=days;d++){ const c=es[d]||''; const s=shifts[c]; if((s&&s.isOff)||c==='國') ftRest++; }
-  });
+  // 正職當月可休天數＝紅字天數（六日＋國定假日），即每位正職應休的天數
+  const ftRest=countRedDays(y,m);
   document.getElementById('stat-bar').innerHTML=`
     <div class="stat-chip"><div class="sv">${emps.length}</div><div class="sl">員工數</div></div>
     <div class="stat-chip" style="cursor:pointer" onclick="editRevenue()"><div class="sv">$${(rev/10000).toFixed(0)}萬</div><div class="sl">預估營業額 ✎</div></div>
@@ -1604,8 +1609,9 @@ async function imageToA4(node, filename){
   cont.style.cssText='position:absolute;left:-99999px;top:0;background:#fff;padding:16px;display:inline-block;text-align:center';
   cont.appendChild(node);
   document.body.appendChild(cont);
-  // 截圖前把 sticky 欄位改為一般定位，避免 html2canvas 把員工欄推到右邊
-  cont.querySelectorAll('.sticky-col').forEach(el=>{ el.style.position='static'; });
+  // 截圖前把所有 sticky 定位改為一般定位：sticky-col（左欄）會被 html2canvas 推到右邊；
+  // hdr-row th（日期/星期表頭，sticky top:0）會被擺到錯位、蓋住中間某列。一律改 static 才正常。
+  cont.querySelectorAll('.sticky-col, .hdr-row th').forEach(el=>{ el.style.position='static'; });
   try{
     // 依元素尺寸自動壓低 scale：避免 iOS canvas 單邊 >4096px 或面積過大產生空白
     const baseW=cont.offsetWidth||800, baseH=cont.offsetHeight||600;
@@ -1615,9 +1621,13 @@ async function imageToA4(node, filename){
     scale=Math.max(1, scale);
     const canvas=await html2canvas(cont,{scale,backgroundColor:'#fff',useCORS:true});
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});
-    const pw=297, ph=210, iw=canvas.width, ih=canvas.height;
-    const r=Math.min(pw/iw, ph/ih);          // 維持比例填滿頁面
+    const iw=canvas.width, ih=canvas.height;
+    // 頁面尺寸直接吻合內容長寬比 → 內容滿版、不留白；手機開啟「符合寬度」即一頁完整呈現、不需滑動
+    const longSide=297; // mm（橫式長邊）
+    const shortSide=+(longSide*Math.min(iw,ih)/Math.max(iw,ih)).toFixed(1);
+    const pdf=new jsPDF({orientation: iw>=ih?'landscape':'portrait', unit:'mm', format:[longSide, shortSide], compress:true});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const r=Math.min(pw/iw, ph/ih);          // 維持比例（頁面已吻合比例，等同滿版、無變形）
     const w=iw*r, h=ih*r;
     pdf.addImage(canvas.toDataURL('image/png'),'PNG',(pw-w)/2,(ph-h)/2,w,h); // PNG 文字清晰
     deliverPdf(pdf, filename);
@@ -1702,6 +1712,14 @@ function updateGistStatus(){
   const canEdit=!!getGistToken();
   const editorUI=document.getElementById('gist-editor-ui');
   const setupUI=document.getElementById('gist-setup-ui');
+  if(IS_LOCAL_DEV){
+    // 本機測試版：不跟雲端同步，編輯只存本機、不會被還原
+    el.innerHTML='🧪 本機測試版（不同步雲端，編輯只存本機、不會被還原）';
+    el.style.color='#b8860b';
+    if(editorUI) editorUI.style.display='none';
+    if(setupUI) setupUI.style.display='none';
+    return;
+  }
   if(canEdit){
     el.innerHTML='🟢 已連線雲端（可編輯，每 30 秒自動同步）';
     el.style.color='var(--green)';
@@ -1947,6 +1965,53 @@ function runAutoSchedule(){
   closeModal('auto-overlay');
   renderSchedule();
   showToast('✅ 班表已自動生成');
+}
+
+// 只代入指休/指定上班，不跑自動生成演算法；與彈窗勾選同步（取消勾選的就清掉），其餘日期不動
+function applyDesignatedOnly(){
+  const y=state.curYear, m=state.curMonth;
+  const emps=getEmployeesForMonth(y,m);
+  const rules=getAutoRules();
+  const days=daysInMonth(y,m);
+  const sch=getSchedule(y,m);
+  let touched=0;
+  emps.forEach(emp=>{
+    const empR=(rules.empRules||{})[emp.id]||{};
+    const isWorkMode=empR.designatedWorkMode||false;
+    const container=document.getElementById(`leaves-${emp.id}`);
+    if(!container) return;
+    const selected=new Set();
+    container.querySelectorAll('.auto-day-btn.selected').forEach(btn=>selected.add(parseInt(btn.textContent,10)));
+    if(!sch[emp.id]) sch[emp.id]={};
+    const empSch=sch[emp.id];
+    if(isWorkMode){
+      // 指定上班：勾選日寫指定班別（已是允許班別就保留）；取消勾選但原本是指定班別的日 → 清空
+      const shift=(empR.allowedShifts&&empR.allowedShifts.length)?empR.allowedShifts[0]:'C';
+      const allowed=new Set(empR.allowedShifts&&empR.allowedShifts.length?empR.allowedShifts:['C']); allowed.add('C');
+      for(let d=1;d<=days;d++){
+        const cur=empSch[d];
+        if(selected.has(d)){
+          if(!(cur&&allowed.has(cur))){ empSch[d]=shift; touched++; }
+        } else if(cur&&allowed.has(cur)){
+          delete empSch[d]; touched++;
+        }
+      }
+    } else {
+      // 指休（含固定班規則員工）：勾選日寫「指」；取消勾選但原本是「指」的日 → 清空；其餘不動
+      for(let d=1;d<=days;d++){
+        const cur=empSch[d];
+        if(selected.has(d)){
+          if(cur!=='指'){ empSch[d]='指'; touched++; }
+        } else if(cur==='指'){
+          delete empSch[d]; touched++;
+        }
+      }
+    }
+  });
+  saveSchedule(y,m,sch);
+  closeModal('auto-overlay');
+  renderSchedule();
+  showToast(`✅ 已代入指休/指定上班（更動 ${touched} 格，未生成班表）`);
 }
 
 function autoGenAlgo(y,m,inputData){
@@ -2331,13 +2396,16 @@ function migrateShiftCodes(){
     const gistId=p.get('gist')||getGistId(), token=p.get('token');
     if(token){ saveGistCfg({gistId,token}); history.replaceState(null,'',location.pathname); }
   }
-  // 2) 一律從雲端 Gist 讀取（讀取免 token），並啟動輪詢
-  await pullFromGist(false);
-  // 若此裝置可編輯，補推本機獨有的資料（例如連雲端前設定的固定成本）
-  scheduleGistPush();
-  startGistPolling();
+  // 2) 雲端同步：線上版才自動讀取雲端 + 啟動 30 秒輪詢；本機測試版完全不同步
+  if(!IS_LOCAL_DEV){
+    await pullFromGist(false);
+    // 若此裝置可編輯，補推本機獨有的資料（例如連雲端前設定的固定成本）
+    scheduleGistPush();
+    startGistPolling();
+  }
+  // 本機測試版：保留 localStorage 既有資料、不會被還原；若完全空白才載入示範資料
   // 3) 僅在「雲端尚未有資料、本機也沒資料、且無編輯權限」時載入示範資料（避免覆蓋雲端）
-  if(!getGistToken() && !getEmployees().length){ loadDemoData(); }
+  if((IS_LOCAL_DEV || !getGistToken()) && !getEmployees().length){ loadDemoData(); }
   // 4) 補上雲端未定義月份的預設國定假日（不推送）
   seedHolidays();
   // 4b) 安全網：本機殘留的舊 H 班碼改為 H1
