@@ -242,8 +242,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <div style="margin-top:12px;padding:10px;background:#f9f9f9;border-radius:8px;font-size:12px;color:var(--gray);line-height:1.8">
         其他裝置打開連結即可<b>自動讀取</b>同一份資料，免設定。<br>
-        若要讓<b>另一台裝置也能編輯</b>，用它掃描下方 QR code。
+        若要讓<b>另一台裝置也能編輯</b>：用下面按鈕把啟用連結傳給它，或用它掃下方 QR code。
       </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="shareGistLink()">🔗 複製／分享啟用編輯連結</button>
       <div id="gist-qr" style="text-align:center;margin-top:10px"></div>
     </div>
 
@@ -1741,6 +1742,18 @@ function disconnectGist(){
   localStorage.removeItem('mala_gist_cfg');
   updateGistStatus();
   showToast('已解除編輯權限，改為唯讀模式');
+}
+
+// 把含 token 的「啟用編輯」連結分享/複製給自己的另一台裝置（手機用系統分享、電腦複製剪貼簿）
+async function shareGistLink(){
+  if(!getGistToken()){ showToast('此裝置未啟用編輯，無法產生連結'); return; }
+  const url=`https://eason0728.github.io/mala-schedule/#gist=${getGistId()}&token=${getGistToken()}`;
+  if(navigator.share){
+    try{ await navigator.share({title:'麻的🔥小辛辣 排班 — 啟用編輯', text:'打開即可在這台裝置啟用編輯（含金鑰，請勿外傳）', url}); return; }
+    catch(e){ if(e && e.name==='AbortError') return; } // 使用者取消分享就算了，不再 fallback
+  }
+  try{ await navigator.clipboard.writeText(url); showToast('✅ 已複製啟用連結，貼到你另一台裝置開啟即可（含金鑰，勿外傳）'); }
+  catch(e){ try{ window.prompt('複製這個啟用連結（含金鑰，勿外傳）：', url); }catch(_){ showToast('⚠️ 無法複製，請改用 QR'); } }
 }
 
 // 收集本機全部 mala_ 資料（排除 token），等同 buildSnapshot 的內容
