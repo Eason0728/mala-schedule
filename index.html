@@ -1667,6 +1667,15 @@ async function exportPDF(){
   summary.innerHTML=`預估營業額 $${rev.toLocaleString()}　｜　預估人事成本 $${cost.toLocaleString()}（${pct.toFixed(1)}%）　｜　外送次數 午餐 ${lunch}／晚餐 ${dinner}／合計 ${lunch+dinner} 次`;
   box.appendChild(summary);
   box.appendChild(document.getElementById('sch-table').cloneNode(true));
+  // 班別時段對照（工作班）— 放在表格下方，讓看班表的人知道每個代碼的上班時段
+  const shifts=getShifts();
+  const legend=document.createElement('div');
+  legend.style.cssText='margin-top:12px;font-size:13px;line-height:2';
+  legend.innerHTML='<span style="font-weight:700;color:#111;margin-right:8px">班別時段</span>'
+    + sortedShiftEntries(shifts).filter(([,sh])=>!sh.isOff).map(([code,sh])=>
+        `<span style="display:inline-block;background:${sh.color};color:${sh.textColor};border-radius:6px;padding:3px 12px;margin:0 6px 4px 0;font-weight:700;white-space:nowrap">${code} <span style="font-weight:400">${(sh.time||'').replace(/\n/g,' ')}</span></span>`
+      ).join('');
+  box.appendChild(legend);
   await imageToA4(box, `麻的小辛辣_${y}${fmt(m)}_班表.pdf`);
   if(!isIOS()) showToast('✅ 班表PDF已下載');
   }catch(e){ showToast('⚠️ 匯出失敗：'+(e&&e.message||e), 4000); }
