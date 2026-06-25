@@ -525,6 +525,7 @@ const IS_LOCAL_DEV = location.hostname==='localhost' || location.hostname==='127
 
 // Debounced push (wait 2s after last change) — 僅在此裝置有 token（可編輯）時才上傳
 let _pushTimer=null;
+let _lastPushFailed=false; // 避免上傳連續失敗時 toast 洗版（只在狀態轉變時提示）
 function scheduleGistPush(){
   if(IS_LOCAL_DEV) return;      // 本機測試版：絕不上傳，編輯只存本機
   if(!getGistToken()) return;  // 唯讀裝置不上傳
@@ -534,16 +535,32 @@ function scheduleGistPush(){
 
 async function pushToGist(showMsg=true){
   const token=getGistToken();
-  if(!token){ if(showMsg) showToast('此裝置為唯讀，請先啟用編輯'); return; }
+  if(!token){ if(showMsg) showToast('此裝置為唯讀，請先啟用編輯'); return false; }
   try{
     const r=await fetch(`https://api.github.com/gists/${getGistId()}`,{
       method:'PATCH',
       headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
       body:JSON.stringify({files:{"mala-schedule.json":{content:JSON.stringify(buildSnapshot(),null,2)}}})
     });
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    if(showMsg) showToast('✅ 已同步到雲端');
-  }catch(e){ if(showMsg) showToast('⚠️ 同步失敗：'+e.message); }
+    if(r.status===401){
+      // Token 無效或過期 → 退回唯讀，避免持續靜默失敗 + 被輪詢還原編輯。明確要求重新啟用。
+      localStorage.removeItem('mala_gist_cfg'); _lastPushFailed=false; updateGistStatus();
+      showToast('⚠️ 編輯權限失效（Token 無效或過期）。已改為唯讀，請重新「啟用編輯」並貼上有效 Token。', 7000);
+      return false;
+    }
+    if(!r.ok){
+      // 其他失敗（403 權限/額度、404 無權限、5xx…）：**一定要讓使用者看到**，不再靜默
+      if(!_lastPushFailed){ _lastPushFailed=true; showToast(`⚠️ 自動儲存到雲端失敗（HTTP ${r.status}）。編輯先存在本機，請確認 Token 有 gist 寫入權限或檢查網路。`, 7000); }
+      return false;
+    }
+    if(_lastPushFailed){ _lastPushFailed=false; showToast('✅ 已恢復同步到雲端'); }
+    else if(showMsg){ showToast('✅ 已同步到雲端'); }
+    return true;
+  }catch(e){
+    // 網路等例外，自動儲存也要提示（首次失敗才提示，避免洗版）
+    if(!_lastPushFailed){ _lastPushFailed=true; showToast('⚠️ 自動儲存到雲端失敗（'+(e.message||e)+'）。編輯先存在本機，請檢查網路。', 7000); }
+    return false;
+  }
 }
 
 async function pullFromGist(silent){
@@ -1862,18 +1879,15 @@ async function connectGist(){
   const token=(document.getElementById('input-gist-token')?.value||'').trim();
   if(!token){ showToast('請貼上 GitHub Token'); return; }
   showToast('驗證中…', 2000);
-  try{
-    const gistId=getGistId();
-    const r=await fetch(`https://api.github.com/gists/${gistId}`,{
-      headers:{'Authorization':'Bearer '+token}
-    });
-    if(!r.ok) throw new Error(`HTTP ${r.status}，請確認 Token 是否有 gist 權限`);
-    saveGistCfg({gistId,token});
-    updateGistStatus();
-    showToast('✅ 已啟用編輯，正在上傳此裝置資料…');
-    await pushToGist(false);
-    showToast('✅ 已上傳到雲端');
-  }catch(e){ showToast('⚠️ 啟用失敗：'+e.message); }
+  // 先暫存 token，再用「真正的寫入」測試權限（GET 對公開 gist 連無權限的 token 也會過，無法驗證寫入）
+  saveGistCfg({gistId:getGistId(), token});
+  _lastPushFailed=false;
+  const ok=await pushToGist(false);
+  if(ok){ updateGistStatus(); showToast('✅ 已啟用編輯並上傳到雲端'); }
+  else {
+    // 寫入失敗 → 還原為唯讀（pushToGist 已說明原因；若非 401 這裡補一則）
+    if(getGistToken()){ localStorage.removeItem('mala_gist_cfg'); updateGistStatus(); showToast('⚠️ 啟用失敗：此 Token 無法寫入（請確認有 gist 權限、未過期）。', 6000); }
+  }
 }
 
 function clearAllData(){
