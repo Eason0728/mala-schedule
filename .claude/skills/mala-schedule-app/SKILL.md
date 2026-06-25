@@ -61,7 +61,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 
 ## 班別（shifts）
 
-`DEFAULT_SHIFTS`（A/B/C/C1/C2/D/D1/E/F/H1 工作班 + 休/特/指/國 休假類），`isOff` 標記休假類。
+`DEFAULT_SHIFTS`（**A/B/C/C2/D/D1/E/F/H1** 工作班 + 公休/休/特/指/國 休假類），`isOff` 標記休假類。注意：**C1 不是內建班別**，是使用者自訂的（存 `mala_shifts`）；使用者輸入的時段格式可能不標準（如 `1700~2100`），顯示一律經 `fmtShiftTime()` 正規化成 `17:00～21:00`，PDF 圖例用 `hasClockTime()`（17:00 或 1700 都認）判斷是否列入。
 - `getShifts()` = DEFAULT + 自訂 - 隱藏。
 - `sortedShiftEntries()`：工作班依英文字母+數字排序，休假類（休→特→指→國）固定排最後。班別圖例、選班、設定都用它。
 - 班別格顏色規則（`renderSchedule` 內，約 line 699–706）：工作班=無網底黑字；**休=不套自己的網底、沿用欄位背景＋紅字**（特意，不要改回灰底）；其他休假類（特/指/國/公休）=自己的網底＋紅字。

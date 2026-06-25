@@ -474,14 +474,21 @@ function sortedShiftEntries(shifts){
   });
   return [...work,...rest];
 }
-// 班別時段顯示格式化：把含兩段以上「HH:MM～HH:MM」的時段（如 F 班中午+晚上）用分隔符接起來。
-// 相容三種來源：預設用 \n 分隔、舊資料無分隔直接相連、已正常的單段。
+// 班別時段顯示格式化：統一波浪號、把兩段以上時段用分隔符接起來，並把無冒號的 HHMM 補成 HH:MM。
+// 相容：預設 \n 分隔、舊資料無分隔相連、單段、以及使用者手打的 1700~2100（無冒號半形～）。
 function fmtShiftTime(t){
   if(!t) return '';
-  const ranges=String(t).match(/\d{1,2}:\d{2}～\d{1,2}:\d{2}/g);
-  if(ranges && ranges.length>=2) return ranges.join('　/　');
+  let s=String(t).replace(/[~～]/g,'～').replace(/\n/g,'');
+  let ranges=s.match(/\d{1,2}:\d{2}～\d{1,2}:\d{2}/g);          // 標準 HH:MM～HH:MM
+  if(!ranges){
+    const raw=s.match(/\d{3,4}～\d{3,4}/g);                     // 無冒號，如 1700～2100
+    if(raw) ranges=raw.map(r=>r.replace(/(\d{1,2})(\d{2})(?=$|～)/g,'$1:$2'));
+  }
+  if(ranges && ranges.length) return ranges.join('　/　');
   return String(t).replace(/\n/g,' ');
 }
+// 判斷時段是否含「時鐘時間」（17:00 或 1700 都算）→ 用來區分工作班 vs 國/公休/休/特/指
+function hasClockTime(t){ return /\d{1,2}[:：]?\d{2}/.test(String(t||'')); }
 function saveShifts(d){ save('mala_shifts',d); }
 function getSchedule(y,m){ return load(`mala_sch_${y}_${m}`,{}); }
 function saveSchedule(y,m,d){ save(`mala_sch_${y}_${m}`,d); }
@@ -1708,7 +1715,7 @@ async function exportPDF(){
   const usedCodes=new Set();
   Object.values(getSchedule(y,m)).forEach(emp=>Object.values(emp||{}).forEach(c=>{ if(c) usedCodes.add(c); }));
   const legendEntries=sortedShiftEntries(shifts).filter(([code,sh])=>
-    usedCodes.has(code) && /\d{1,2}:\d{2}～\d{1,2}:\d{2}/.test(sh.time||''));
+    usedCodes.has(code) && hasClockTime(sh.time));
   if(legendEntries.length){
     const legend=document.createElement('div');
     legend.style.cssText='margin-top:12px;font-size:13px;line-height:2';
