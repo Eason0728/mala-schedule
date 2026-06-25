@@ -36,6 +36,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 - **`IS_LOCAL_DEV`（localhost/127.0.0.1 開啟時為 true）= 本機測試版，完全不同步雲端**：`init` 不 `pullFromGist`、不 `startGistPolling`；`scheduleGistPush()` 一律 return。→ 本機編輯只存 localStorage、**永遠不會被雲端還原**，也絕不寫到正式 Gist。線上 `eason0728.github.io` 為 false，維持完整同步＋輪詢供多裝置共用。設定頁狀態顯示「🧪 本機測試版」。**debug「為何 localhost 不同步/改了沒上傳」前先確認這是刻意設計，不是 bug。** 本機要拉最新正式資料可手動按設定頁「立即同步」。
 - **🚫 自動上傳（`pushToGist`）絕不可靜默失敗**：`scheduleGistPush` 是用 `pushToGist(false)` 自動觸發的。曾踩雷：失敗時不顯示任何提示 → token 失效/無 gist 寫入權限時每次上傳都默默失敗，使用者以為存了、其實沒存，30 秒後又被輪詢還原 = 「編輯無法儲存」。**預防：`pushToGist` 失敗一定要 toast 提示（用 `_lastPushFailed` 旗標避免洗版）；HTTP 401 視為 token 失效 → 移除 token、`updateGistStatus()` 退回唯讀、提示重新啟用。** 並回傳 boolean。
 - **驗證 token 要測「寫入」不是「讀取」**：公開 Gist 用 GET 連無 gist 權限的 token 也會 200，所以 `connectGist` 不能只 GET 驗證——要實際 `pushToGist` 寫一次，失敗就還原唯讀。QR/`#token=` 連結帶進來的 token 同理（沒驗證就存），靠上面「上傳失敗會提示」當安全網。
+- **唯讀裝置（線上、無 token）編輯也要提示**：`scheduleGistPush` 在 `!getGistToken()` 會直接 return，**連上傳都沒試 → 沒有錯誤**，使用者編輯（如新增班別）後只存本機、被輪詢還原 = 「無法記憶」卻無提示。預防：唯讀分支用 `warnReadOnlyEdit()`（節流 8 秒）提示「此裝置唯讀，編輯不會儲存，請先啟用編輯」；用 `_initDone` 旗標避免 init 期間種子資料誤報。
 
 ## 資料模型（localStorage，全部以 `mala_` 開頭）
 
