@@ -2282,7 +2282,9 @@ function autoGenAlgo(y,m,inputData){
       // monthlyRestLimit: rest days pre-assigned in Step 1; just count working days
       if(empMR.monthlyRestLimit!=null){ avail.forEach(d=>committed[d]++); return; }
 
-      let need=Math.max(0,2-existRest);
+      // 每週應休天數按當週實際天數比例（完整 7 天＝2 天）；月初/月底不完整的週（如只有 1 天或 2 天）不再硬湊 2 天休假，否則會把當天所有人強制排休
+      const weekQuota=Math.round(2*week.length/7);
+      let need=Math.max(0,weekQuota-existRest);
       // 正職：限制每月 (指+休+國) = 紅字天數，將剩餘預算平均分配到剩餘週數
       if(emp.isFullTime&&restBudget[emp.id]!=null){
         const remaining=restBudget[emp.id]-休used[emp.id];
