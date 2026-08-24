@@ -588,20 +588,44 @@ async function pushToGist(showMsg=true){
   }
 }
 
+// Gist 擁有者帳號：唯讀裝置走 raw 網址時需要它組出網址
+const GIST_OWNER='Eason0728';
+let _pullFailStreak=0;   // 連續拉取失敗次數（給設定頁狀態列用，不用 toast 洗版）
+
+// 取回雲端快照的文字內容。
+// ⚠️ 唯讀裝置一律走 gist raw（gist.githubusercontent.com），不要走 api.github.com：
+// 匿名呼叫 GitHub API 的額度是「每個 IP 每小時 60 次」，而輪詢是每 30 秒一次（120 次/小時），
+// 店裡幾台手機接同一個 WiFi 還會共用同一份額度 → 幾分鐘就爆，之後 API 一律回 403，
+// 裝置就停在舊資料、而且輪詢是 silent 的沒任何提示＝「打開網址看不到別人改的內容」。
+// raw 網址不吃那份額度（回應沒有 x-ratelimit 標頭），但有 5 分鐘 CDN 快取，
+// 所以一定要帶 cache-buster query，否則同樣讀到舊的。
+// 有 token 的裝置維持走 API（額度 5000/小時、內容最即時）。
+async function fetchSnapshotText(){
+  const gistId=getGistId(), token=getGistToken();
+  if(token){
+    const r=await fetch(`https://api.github.com/gists/${gistId}`,{
+      headers:{'Authorization':'Bearer '+token}, cache:'no-store' });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return (await r.json()).files?.['mala-schedule.json']?.content || null;
+  }
+  try{
+    const r=await fetch(`https://gist.githubusercontent.com/${GIST_OWNER}/${gistId}/raw/mala-schedule.json?t=${Date.now()}`,{ cache:'no-store' });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.text();
+  }catch(e){
+    // raw 挂掉才退回匿名 API 當備援（額度有限，只在 raw 失敗時用）
+    const r=await fetch(`https://api.github.com/gists/${gistId}`,{ cache:'no-store' });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    return (await r.json()).files?.['mala-schedule.json']?.content || null;
+  }
+}
+
 async function pullFromGist(silent){
-  const gistId=getGistId();
   // Never clobber unsaved local edits: if a push is pending, skip this pull
   if(_pushTimer){ return; }
   if(!silent) showToast('同步中...', 2000);
   try{
-    // 讀取免 token；若本機有 token 則帶上以提高 API 額度
-    const token=getGistToken();
-    const headers={};
-    if(token) headers['Authorization']='Bearer '+token;
-    const r=await fetch(`https://api.github.com/gists/${gistId}`,{ headers, cache:'no-store' });
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data=await r.json();
-    const content=data.files?.['mala-schedule.json']?.content;
+    const content=await fetchSnapshotText();
     if(!content) return;
     const snap=JSON.parse(content);
     if(snap._init) return;
@@ -611,9 +635,21 @@ async function pullFromGist(silent){
     });
     _suppressPush=false;
     _synced=true;
+    _pullFailStreak=0;
     renderSchedule(); renderEmployees(); renderSalary();
+    // 設定頁的班別／加班規則／店名也來自雲端快照，停在設定頁時一併重繪
+    if(document.querySelector('.page.active')?.id==='page-settings') renderSettings();
+    else updateGistStatus();
     if(!silent) showToast('✅ 已從雲端同步');
-  }catch(e){ _suppressPush=false; if(!silent) showToast('⚠️ 同步失敗：'+e.message); }
+  }catch(e){
+    _suppressPush=false;
+    _pullFailStreak++;
+    // 背景輪詢連續失敗要讓使用者看得到，否則畫面停在舊資料卻毫無徵兆
+    if(silent){
+      if(_pullFailStreak===2) showToast('⚠️ 讀取雲端失敗，畫面可能不是最新（'+e.message+'）', 6000);
+      updateGistStatus();
+    } else showToast('⚠️ 同步失敗：'+e.message);
+  }
 }
 
 // Polling wrapper: skip if local edits are pending (handled inside pullFromGist too)
@@ -1879,8 +1915,10 @@ function updateGistStatus(){
     return;
   }
   if(canEdit){
-    el.innerHTML='🟢 已連線雲端（可編輯，每 30 秒自動同步）';
-    el.style.color='var(--green)';
+    el.innerHTML=_pullFailStreak>=2
+      ? `🟠 已連線雲端（可編輯），但讀取雲端連續失敗 ${_pullFailStreak} 次，畫面可能不是最新`
+      : '🟢 已連線雲端（可編輯，每 30 秒自動同步）';
+    el.style.color=_pullFailStreak>=2 ? '#c77700' : 'var(--green)';
     if(editorUI) editorUI.style.display='block';
     if(setupUI) setupUI.style.display='none';
     const qrDiv=document.getElementById('gist-qr');
@@ -1892,8 +1930,10 @@ function updateGistStatus(){
         <div style="font-size:11px;color:var(--gray);margin-top:6px">用另一裝置掃描 → 取得編輯權限</div>`;
     }
   } else {
-    el.innerHTML='🟢 已連線雲端（唯讀，自動讀取最新）';
-    el.style.color='var(--green)';
+    el.innerHTML=_pullFailStreak>=2
+      ? `🟠 已連線雲端（唯讀），但讀取雲端連續失敗 ${_pullFailStreak} 次，畫面可能不是最新`
+      : '🟢 已連線雲端（唯讀，自動讀取最新）';
+    el.style.color=_pullFailStreak>=2 ? '#c77700' : 'var(--green)';
     if(editorUI) editorUI.style.display='none';
     if(setupUI) setupUI.style.display='block';
   }
