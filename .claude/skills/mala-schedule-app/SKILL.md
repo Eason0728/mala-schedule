@@ -1,6 +1,6 @@
 ---
 name: mala-schedule-app
-description: 維護和修改「麻的🔥小辛辣」排班系統 Web App（eason0728.github.io/mala-schedule）的專用 skill。當使用者提到以下任何情境時，必須載入此 skill：修改排班 app、改班表、新增/編輯/刪除員工、調整薪資計算、加班費、津貼、固定成本（勞健保/團保/三節/年終攤提）、班別設定、國定假日、農曆做牙、自動排班、每日需求人數、外送、預估營業額/人事成本、匯出 PDF、雲端同步（Gist/啟用編輯）、debug 排班 app。即使只說「排班 app 改一下」或「班表出問題」也要載入。
+description: 麻的🔥小辛辣排班系統 Web App（eason0728.github.io/mala-schedule）維護 skill。觸發：排班/班表/員工/薪資/加班費/津貼/固定成本/班別/國定假日/農曆做牙/自動排班/外送/人事成本/PDF匯出/雲端同步(Gist)，含口語講法如「排班app改一下」「班表出問題」。
 ---
 
 # 麻的🔥小辛辣 排班系統
@@ -24,6 +24,25 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 
 - **Gist ID 寫死**：`const DEFAULT_GIST_ID='1f7ecf0be418990e24d7b2351572e4aa'`；`getGistId()` 永遠回傳它，**忽略** localStorage 裡可能殘留的舊 gistId，確保所有裝置（含曾連舊 Gist 的）匯流到同一份資料。
 - **讀取免 token**：任何裝置打開連結就 `pullFromGist()` 自動拉同一份資料（公開 Gist）。
+- **⚠️ 唯讀裝置的讀取一定要走 gist raw，不可走 api.github.com**（2026-08-24 故障根因）：
+  匿名呼叫 GitHub API 的額度是 **每個 IP 每小時 60 次**（實測 `x-ratelimit-limit: 60`），
+  而輪詢是每 30 秒一次＝**120 次/小時**，店裡多台手機接同一個 WiFi 還共用同一份額度 →
+  幾分鐘就爆，之後 API 一律 403。因為輪詢是 `silent` 的，**畫面停在舊資料卻毫無提示**，
+  症狀就是「A 改了、B 打開網址看不到」。
+  正解＝`fetchSnapshotText()`：無 token 走
+  `https://gist.githubusercontent.com/{GIST_OWNER}/{gistId}/raw/mala-schedule.json?t={Date.now()}`
+  （不吃 API 額度，回應沒有 x-ratelimit 標頭），raw 失敗才退回匿名 API 當備援；
+  有 token 的裝置維持走 API（5000/hr、最即時）。
+  **cache-buster query 不可省**：raw 有 `cache-control: max-age=300`，
+  不帶 query 連打是 `x-cache: HIT`（讀到 5 分鐘內的舊檔），帶了才每次 `MISS` 回源拿最新。
+  `cache:'no-store'` 只繞得掉瀏覽器快取、繞不掉 Fastly CDN。
+- **拉取失敗不可完全靜默**：`_pullFailStreak` 累計連續失敗，第 2 次跳一次 toast，
+  並讓設定頁狀態列從 🟢 轉 🟠 顯示「畫面可能不是最新」。否則使用者只會看到舊資料、無從判斷。
+- **pull 完要重繪「當前所在頁」**：原本只跑 `renderSchedule/renderEmployees/renderSalary`，
+  停在設定頁時班別／加班規則／店名不會更新。現在當前頁是設定頁就 `renderSettings()`。
+- **本機驗證同步的方法**：`localhost` 是 `IS_LOCAL_DEV`（不自動同步），但設定頁的
+  「立即同步」按鈕仍會手動呼叫 `pullFromGist()` → 可用它驗證讀取路徑，
+  在 devtools 包一層 `window.fetch` 記錄實際打出去的網址（確認沒碰 api.github.com）。
 - **寫入需 token**：`pushToGist()` 需要 gist-scoped GitHub token，只存在瀏覽器 `localStorage['mala_gist_cfg']`。沒有 token 的裝置是唯讀（`scheduleGistPush()` 直接 return）。
 - **🚫 token 絕不能寫進原始碼**：repo 是 public，GitHub secret scanning 會自動撤銷被 commit 的 token。啟用編輯的方式＝在設定頁貼 token，或開帶 `#gist=ID&token=TOKEN` 的連結（hash 讀完即用 `history.replaceState` 清掉）。
 - **🚫 開發中不要從這端推資料到 Gist**：Gist 是正式使用中的資料，增量推送會在使用者跨裝置編輯時覆蓋班表。改 `index.html` → push GitHub Pages 沒問題（那是 app 本身）；**資料**的種子由使用者在自己有資料的裝置上按「啟用編輯」上傳。
@@ -106,7 +125,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 - 模板字串內的正則若含 `</...>`（如 `</td>`）會在 heredoc 裡誤判，測試腳本改用字串 `includes` 比對。
 - **絕不 commit token**；token 只存在使用者瀏覽器 localStorage。
 - **部署流程（使用者明確要求、勿違反）**：改完**不要自動 push**。先改好讓使用者在本機測（`localhost:8765`，preview server 服務 `/Users/guoeason/mala-schedule`），明確回報「本機可測」，**問過、得到「推上去」才 push**。做法：在 feature branch commit（保持 main＝GitHub 現況）→ 得到同意才 merge main + push 部署。技術上 push `index.html` 到 GitHub Pages 沒問題，但**節奏由使用者拍板**。
-- **預覽 server**：`~/.claude/launch.json` 的 `schedule-app` 要服務 `/Users/guoeason/mala-schedule`（曾誤指向已廢棄的 `~/Desktop/AI/Claude/schedule-app`）。此 preview server 常在換回合時被系統停掉，使用者說「重啟」就 `preview_stop`→`preview_start`。
+- **預覽 server**：`~/.claude/launch.json` 的 `schedule-app` 要服務 `/Users/guoeason/mala-schedule`（曾誤指向已廢棄的 `~/Desktop/AI/Claude/schedule-app`）。2026-08-24 起改成 `autoPort`（原本寫死 8765，會被別的專案的 server 佔用而起不來），port 由 preview 自動配。此 preview server 常在換回合時被系統停掉，使用者說「重啟」就 `preview_stop`→`preview_start`。
 - **絕不**從開發端用 token 寫 Gist 資料。
 - 之前 plugin/通用描述若與本檔不符，**以本檔為準**。
 
