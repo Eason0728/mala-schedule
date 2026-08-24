@@ -229,14 +229,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="section-title" style="padding:8px 0 4px;font-size:11px">國定假日加班</div>
     <div class="form-group"><label>國定假日倍率</label><input type="number" id="set-hol" step="0.01" value="2.00" onchange="saveSetting('holRate',this.value)"></div>
   </div>
+  <div class="section-title">🔒 班表鎖定</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--gray);line-height:1.7;margin-bottom:10px">
+      排定好的月份鎖起來，就不會在手機上被誤觸改掉。鎖定會同步到所有裝置。
+    </div>
+    <div id="lock-list"></div>
+  </div>
   <div class="section-title">☁️ 雲端同步</div>
   <div class="card" id="gist-setting-card">
     <div id="gist-status" style="font-size:13px;margin-bottom:12px;color:var(--gray)">⚫ 未連線</div>
 
-    <!-- 共用：立即同步（讀取免 token） -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-primary" style="flex:1" onclick="pullFromGist()">⬇ 立即同步（讀取最新）</button>
-    </div>
 
     <!-- 可編輯（已設定 token）：上傳 / 解除 / QR -->
     <div id="gist-editor-ui" style="display:none">
@@ -495,7 +498,49 @@ function fmtShiftTime(t){
 function hasClockTime(t){ return /\d{1,2}[:：]?\d{2}/.test(String(t||'')); }
 function saveShifts(d){ save('mala_shifts',d); }
 function getSchedule(y,m){ return load(`mala_sch_${y}_${m}`,{}); }
-function saveSchedule(y,m,d){ save(`mala_sch_${y}_${m}`,d); }
+// ===== 班表鎖定（按月）=====
+// 已確定的班表鎖起來，避免手機上誤觸把班改掉。
+// 狀態存 mala_locks（`${y}_${m}` 陣列），走 save() → 會被 buildSnapshot 打包進雲端快照，
+// 所以一台裝置鎖起來，其他裝置同步後也是鎖的。
+function getLocks(){ const v=load('mala_locks',[]); return Array.isArray(v)?v:[]; }
+function isMonthLocked(y,m){ return getLocks().includes(`${y}_${m}`); }
+function setMonthLock(y,m,locked){
+  const key=`${y}_${m}`, locks=getLocks().filter(k=>k!==key);
+  if(locked) locks.push(key);
+  save('mala_locks', locks);
+}
+// 設定頁按鈕入口。鎖定一按就鎖；解鎖要二次確認（解鎖才是危險的方向）
+function toggleMonthLock(y,m){
+  // 唯讀裝置鎖了也傳不上雲端，30 秒後就被輪詢還原，等於沒鎖 → 直接擋住並說清楚
+  if(!IS_LOCAL_DEV && !getGistToken()){
+    showToast('此裝置為唯讀，請先到下方「雲端同步」啟用編輯才能鎖定班表', 5000);
+    return;
+  }
+  if(isMonthLocked(y,m)){
+    if(!confirm(`確定解除 ${y}年${m}月 的鎖定？解除後班表就能再被修改。`)) return;
+    setMonthLock(y,m,false);
+    showToast(`🔓 已解除 ${y}年${m}月 鎖定`);
+  } else {
+    setMonthLock(y,m,true);
+    showToast(`🔒 已鎖定 ${y}年${m}月 班表`);
+  }
+  renderSettings();
+  renderSchedule();
+}
+
+// 擋下編輯並提示；所有會改到班表的入口都先問過它
+function blockIfLocked(y,m){
+  if(!isMonthLocked(y,m)) return false;
+  showToast(`🔒 ${y}年${m}月 班表已鎖定，請先到 設定 → 班表鎖定 解除`, 4000);
+  return true;
+}
+
+function saveSchedule(y,m,d){
+  // 最後一道防線：所有寫入都經過這裡，鎖定月份一律拒絕
+  if(isMonthLocked(y,m)) return false;
+  save(`mala_sch_${y}_${m}`,d);
+  return true;
+}
 function getSettings(){ return {...{regularHours:8,ot1:1.33,ot2:1.67,holRate:2.0},...load('mala_settings',{})}; }
 function saveSetting(k,v){ const s=getSettings();s[k]=parseFloat(v)||v;save('mala_settings',s); }
 function getHolidays(y,m){ return load(`mala_hol_${y}_${m}`,[]); }
@@ -697,6 +742,7 @@ function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 // ===== SCHEDULE PAGE =====
 function clearDayShifts(){
   const y=state.curYear, m=state.curMonth;
+  if(blockIfLocked(y,m)) return;
   const total=daysInMonth(y,m);
   const input=prompt(`清除哪一天所有人的班別？\n請輸入日期（1～${total}）`);
   if(input===null) return;
@@ -712,6 +758,7 @@ function clearDayShifts(){
 
 function clearMonthShifts(){
   const y=state.curYear, m=state.curMonth;
+  if(blockIfLocked(y,m)) return;
   if(!confirm(`確定清除 ${y}年${m}月 所有人的班別？此操作無法復原！`)) return;
   saveSchedule(y,m,{});
   renderSchedule();
@@ -727,7 +774,8 @@ function changeMonth(d){
 
 function renderSchedule(){
   const y=state.curYear, m=state.curMonth;
-  document.getElementById('month-label').textContent=`${y} 年 ${m} 月`;
+  // 鎖定的月份在標題直接掛 🔒，一眼看得出這個月不能改
+  document.getElementById('month-label').textContent=`${y} 年 ${m} 月${isMonthLocked(y,m)?' 🔒':''}`;
   const st=getStore();
   document.getElementById('store-label').textContent = st?`店別：${st}`:'＋ 設定店別';
   const days=daysInMonth(y,m);
@@ -1145,6 +1193,7 @@ function calcRequiredHours(y,m){
 
 // ===== SHIFT PICKER =====
 function openShiftPicker(empId, day){
+  if(blockIfLocked(state.curYear,state.curMonth)) return;   // 已鎖定：連選班視窗都不開
   state.pendingCell={empId,day};
   state.pendingShift=null;
   const y=state.curYear,m=state.curMonth;
@@ -1517,7 +1566,33 @@ function renderSalary(){
 }
 
 // ===== SETTINGS PAGE =====
+// 列出「已經排了班的月份」，各給一顆鎖定切換鈕
+function renderLockList(){
+  const el=document.getElementById('lock-list');
+  if(!el) return;
+  const months=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i), mt=k&&k.match(/^mala_sch_(\d+)_(\d+)$/);
+    if(!mt) continue;
+    const sch=load(k,{});
+    // 空月份不列（清空過的月份沒必要出現在清單裡）
+    const hasData=Object.values(sch).some(o=>o&&Object.keys(o).length);
+    if(hasData||isMonthLocked(+mt[1],+mt[2])) months.push([+mt[1],+mt[2]]);
+  }
+  months.sort((a,b)=>b[0]-a[0]||b[1]-a[1]);
+  if(!months.length){ el.innerHTML='<div style="font-size:13px;color:var(--gray)">目前沒有已排班的月份</div>'; return; }
+  el.innerHTML=months.map(([y,m])=>{
+    const locked=isMonthLocked(y,m);
+    return `<div style="display:flex;align-items:center;padding:8px 10px;margin:0 -10px;border-bottom:1px solid var(--border);${locked?'background:#fff5f5':''}">
+      <span style="flex:1;font-weight:600">${y}年${m}月${locked?' 🔒':''}</span>
+      <button class="btn btn-sm ${locked?'btn-primary':'btn-ghost'}" onclick="toggleMonthLock(${y},${m})">
+        ${locked?'🔓 解除鎖定':'🔒 鎖定'}</button>
+    </div>`;
+  }).join('');
+}
+
 function renderSettings(){
+  renderLockList();
   const shifts=getShifts();
   const settings=getSettings();
   document.getElementById('set-regular-hours').value=settings.regularHours;
@@ -2011,6 +2086,7 @@ function countRedDays(y,m){
 
 function openAutoSchedule(){
   const y=state.curYear, m=state.curMonth;
+  if(blockIfLocked(y,m)) return;
   const emps=getEmployeesForMonth(y,m);
   if(!emps.length){ showToast('本月沒有員工'); return; }
   renderAutoScheduleModal(y,m);
@@ -2170,6 +2246,7 @@ function runAutoSchedule(){
 // 只代入指休/指定上班，不跑自動生成演算法；與彈窗勾選同步（取消勾選的就清掉），其餘日期不動
 function applyDesignatedOnly(){
   const y=state.curYear, m=state.curMonth;
+  if(blockIfLocked(y,m)) return;
   const emps=getEmployeesForMonth(y,m);
   const rules=getAutoRules();
   const days=daysInMonth(y,m);
