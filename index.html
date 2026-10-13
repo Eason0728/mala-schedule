@@ -555,22 +555,39 @@ function getStore(){ return load('mala_store',''); }
 
 // ===== GITHUB GIST SYNC =====
 // 雲端資料 Gist：讀取免 token（任何裝置打開即自動同步）；寫入才需 token（只存在本機 localStorage，不進公開原始碼）
-const DEFAULT_GIST_ID='1f7ecf0be418990e24d7b2351572e4aa';
+const DEFAULT_GIST_ID='47c876cc1cad57a1735e6a9c68d19103';
 function getGistCfg(){ try{return JSON.parse(localStorage.getItem('mala_gist_cfg')||'null');}catch{return null;} }
 function saveGistCfg(cfg){ localStorage.setItem('mala_gist_cfg', JSON.stringify(cfg)); }
 // 資料位置固定用內建 Gist，所有裝置（含曾連過舊 Gist 的）都匯流到同一份資料；cfg 只負責提供寫入用的 token
 function getGistId(){ return DEFAULT_GIST_ID; }
 function getGistToken(){ const c=getGistCfg(); return (c&&c.token)||''; }
 
-// Collect all mala_ keys into one JSON snapshot
+// ⚠️ 2026-10-13 個資外洩修正：Gist 代號寫在公開 repo 裡＝任何人都讀得到 Gist。
+// 上傳只放「排班要用的 key」（白名單；同網域其他 app 的 mala_ key 不再被掃進去），
+// 員工的薪資／電話／生日等欄位只留在編輯裝置本機，不上雲端；拉取時再把本機的這些欄位併回去。
+const SYNC_KEY_RE=/^mala_(employees|shifts|hidden_shifts|locks|day_req|auto_rules|settings|store|hol_ver|(sch|hol|deliv|notes|rev)_\d+_\d+)$/;
+const EMP_PRIVATE_FIELDS=['phone','birthday','wage','base','insurance','dormitory','mgrAllow','nightAllow','skillAllow','attendBonus','otRate'];
+function stripEmpPrivate(list){
+  return (Array.isArray(list)?list:[]).map(e=>{ const o={...e}; EMP_PRIVATE_FIELDS.forEach(f=>delete o[f]); return o; });
+}
+// 雲端員工清單＋本機私密欄位（依 id 對回）
+function mergeEmpPrivate(cloudList){
+  let local=[]; try{ local=JSON.parse(localStorage.getItem('mala_employees')||'[]')||[]; }catch{}
+  const byId={}; local.forEach(e=>{ if(e&&e.id) byId[e.id]=e; });
+  return stripEmpPrivate(cloudList).map(e=>{
+    const l=byId[e.id]; if(!l) return e;
+    const o={...e}; EMP_PRIVATE_FIELDS.forEach(f=>{ if(l[f]!==undefined) o[f]=l[f]; }); return o;
+  });
+}
 function buildSnapshot(){
   const snap={};
   for(let i=0;i<localStorage.length;i++){
     const k=localStorage.key(i);
-    if(k&&k.startsWith('mala_')&&k!=='mala_gist_cfg'){
+    if(k&&SYNC_KEY_RE.test(k)){
       try{snap[k]=JSON.parse(localStorage.getItem(k));}catch{}
     }
   }
+  if(snap.mala_employees) snap.mala_employees=stripEmpPrivate(snap.mala_employees);
   return snap;
 }
 
@@ -676,6 +693,8 @@ async function pullFromGist(silent){
     if(snap._init) return;
     _suppressPush=true;
     Object.entries(snap).forEach(([k,v])=>{
+      if(!SYNC_KEY_RE.test(k)) return;   // 舊快照殘留的其他 key（含別的 app 的憑證）一律不寫進本機
+      if(k==='mala_employees') v=mergeEmpPrivate(v);
       localStorage.setItem(k, JSON.stringify(v));
     });
     _suppressPush=false;
@@ -1956,11 +1975,11 @@ function importBackup(input){
       const stale=[];
       for(let i=0;i<localStorage.length;i++){
         const k=localStorage.key(i);
-        if(/^mala_/.test(k) && k!=='mala_gist_cfg') stale.push(k);
+        if(SYNC_KEY_RE.test(k) || k==='mala_fixedcost') stale.push(k);   // 只清排班自己的 key，不動同網域其他 app 的資料
       }
       stale.forEach(k=>localStorage.removeItem(k));
       Object.entries(snap).forEach(([k,v])=>{
-        if(/^mala_/.test(k) && k!=='mala_gist_cfg'){ localStorage.setItem(k, JSON.stringify(v)); }
+        if(SYNC_KEY_RE.test(k) || k==='mala_fixedcost'){ localStorage.setItem(k, JSON.stringify(v)); }
       });
     } finally {
       _suppressPush=false; // 寫入中途出錯也不能讓自動上傳被永久關閉（會變成無聲不儲存）

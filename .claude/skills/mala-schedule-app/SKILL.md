@@ -22,7 +22,7 @@ remote: `https://github.com/eason0728/mala-schedule.git`
 
 資料存在 GitHub Gist，內容是單一檔 `mala-schedule.json`（把所有 `mala_` localStorage key 包成一份 snapshot）。
 
-- **Gist ID 寫死**：`const DEFAULT_GIST_ID='1f7ecf0be418990e24d7b2351572e4aa'`；`getGistId()` 永遠回傳它，**忽略** localStorage 裡可能殘留的舊 gistId，確保所有裝置（含曾連舊 Gist 的）匯流到同一份資料。
+- **Gist ID 寫死**：`const DEFAULT_GIST_ID='47c876cc1cad57a1735e6a9c68d19103'`；`getGistId()` 永遠回傳它，**忽略** localStorage 裡可能殘留的舊 gistId，確保所有裝置（含曾連舊 Gist 的）匯流到同一份資料。
 - **讀取免 token**：任何裝置打開連結就 `pullFromGist()` 自動拉同一份資料（公開 Gist）。
 - **⚠️ 唯讀裝置的讀取一定要走 gist raw，不可走 api.github.com**（2026-08-24 故障根因）：
   匿名呼叫 GitHub API 的額度是 **每個 IP 每小時 60 次**（實測 `x-ratelimit-limit: 60`），
