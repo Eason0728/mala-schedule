@@ -2602,17 +2602,8 @@ function onMonthlyRestLimitToggle(empId,checked){
 // ===== DEMO DATA =====
 function loadDemoData(){
   if(getEmployees().length) return;
-  const emps=[
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:true},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:true},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:true},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-    {id:uid(),name:'示範員工',hireDate:'2025-01-01',phone:'',wage:183,base:0,insurance:0,dormitory:0,isFullTime:false},
-  ];
+  // 個資不可寫進原始碼（repo 為 public，2026-10-13 外洩事件移除示範員工）
+  const emps=[];
   saveEmployees(emps);
 }
 
